@@ -77,8 +77,8 @@ void ClientHandler::onReadyRead()
                 handleDownload(remotePath, offset);
             }
         } else if (command == "MKDIR") {
-            if (parts.size() >= 2) {
-                QString path = parts[1];
+            if (line.length() > 6) {
+                QString path = line.mid(6).trimmed();
                 handleCreateDirectory(path);
             }
         } else if (command == "DELETE") {

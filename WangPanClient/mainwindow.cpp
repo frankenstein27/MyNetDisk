@@ -72,6 +72,28 @@ MainWindow::MainWindow(QWidget *parent) :
             ui->pathLabel->setText("当前路径: " + currentDirectory);
         });
     
+    connect(FileManager::instance(), &FileManager::downloadResult, this, [=](bool success, const QString &message) {
+            if (success) {
+                ui->statusLabel->setText("下载成功");
+
+                // 如果是预览文件，打开预览窗口
+                if (!currentPreviewFile.isEmpty()) {
+                    QString tempPath = QDir::tempPath() + "/" + currentPreviewFile;
+                    PreviewWindow *previewWindow = new PreviewWindow(this);
+                    // 确保窗口独立弹出并释放内存
+                    previewWindow->setAttribute(Qt::WA_DeleteOnClose);
+                    previewWindow->setFile(tempPath, currentPreviewFile);
+                    previewWindow->show();
+                    previewWindow->raise(); // 强制将预览窗口置于顶层
+                    ui->statusLabel->setText("预览文件: " + currentPreviewFile);
+                    currentPreviewFile.clear();
+                }
+            } else {
+                ui->statusLabel->setText("下载失败: " + message);
+                currentPreviewFile.clear();
+            }
+        });
+
     // 连接文件管理器的上传进度信号
     connect(FileManager::instance(), &FileManager::uploadProgress, this, [=](qint64 bytesSent, qint64 bytesTotal) {
         qDebug() << "Upload progress:" << bytesSent << "/" << bytesTotal;
@@ -111,10 +133,18 @@ void MainWindow::on_actionNewDirectory_triggered()
     bool ok;
     QString dirName = QInputDialog::getText(this, "新建目录", "请输入目录名称:", QLineEdit::Normal, "", &ok);
     if (ok && !dirName.isEmpty()) {
+
+        // 校验系统不允许的文件名特殊字符
+        QRegExp rx("[\\\\/:*?\"<>|]");
+        if (dirName.contains(rx)) {
+            ui->statusLabel->setText("创建失败: 目录名不能包含 \\ / : * ? \" < > | 等字符");
+            return;
+        }
+
         QString path = buildPath(dirName);
         
         if (FileManager::instance()->createDirectory(path)) {
-            ui->statusLabel->setText("目录创建成功");
+            ui->statusLabel->setText("目录 " + dirName + " 创建请求已发送");
             NetworkManager::instance()->listFiles(currentDirectory);
         } else {
             ui->statusLabel->setText("目录创建失败");
@@ -249,8 +279,8 @@ void MainWindow::HandleFileListWidget_itemDoubleClicked(QListWidgetItem *item)
             QFile::remove(tempPath);
         }
         ui->statusLabel->setText("正在下载文件: " + fileName);
-        bool res = FileManager::instance()->downloadFile(filePath, tempPath);
-        qDebug() << "download file" << fileName << ":" << res;
+        FileManager::instance()->downloadFile(filePath, tempPath);
+        ui->statusLabel->setText("文件 " + fileName + "下载成功");
     }
 }
 

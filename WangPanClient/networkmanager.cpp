@@ -245,53 +245,70 @@ void NetworkManager::onError(QAbstractSocket::SocketError error)
 void NetworkManager::onReadyRead()
 {
     if (m_isDownloading && m_downloadFile) {
-            if (m_downloadFileSize == 0) {
-                // 必须等待有一整行数据到来
-                if (!m_socket->canReadLine()) return;
-
-                // 使用 trimmed() 彻底清除 \r\n 等不可见字符的干扰
-                QString line = QString::fromUtf8(m_socket->readLine()).trimmed();
+            // 尝试读取指令头，使用 while 循环防止多条指令粘连
+            while (m_downloadFileSize == 0 && m_socket->canReadLine()) {
+                QByteArray rawLine = m_socket->readLine();
+                QString line = QString::fromUtf8(rawLine).trimmed();
 
                 if (line.startsWith("DOWNLOAD_OK")) {
                     m_downloadFileSize = line.mid(11).trimmed().toLongLong();
+
+                    // 瞬间完成或空文件的情况
+                    if (m_downloadFileSize == 0 || m_downloadBytesReceived >= m_downloadFileSize) {
+                        m_downloadFile->flush();
+                        m_downloadFile->close();
+                        delete m_downloadFile;
+                        m_downloadFile = nullptr;
+                        m_isDownloading = false;
+                        emit downloadResult(true, "下载成功");
+                        break; // 跳出循环，让下方的 m_buffer 处理可能剩下的普通指令
+                    }
                 } else if (line.startsWith("DOWNLOAD_FAIL")) {
-                    emit downloadResult(false, line.mid(13));
                     m_downloadFile->close();
                     delete m_downloadFile;
                     m_downloadFile = nullptr;
                     m_isDownloading = false;
+                    emit downloadResult(false, line.mid(13));
                     return;
+                } else {
+                    // 如果服务器在发送文件前发来了其他普通指令，存入缓冲池，不能丢弃
+                    m_buffer.append(rawLine);
                 }
             }
 
-            if (m_downloadFileSize > 0 && m_socket->bytesAvailable() > 0) {
-                QByteArray data = m_socket->readAll();
+            // 接收文件实体数据
+            if (m_isDownloading && m_downloadFileSize > 0 && m_socket->bytesAvailable() > 0) {
+                qint64 bytesToRead = m_downloadFileSize - m_downloadBytesReceived;
+                QByteArray data = m_socket->read(bytesToRead);
                 m_downloadFile->write(data);
                 m_downloadBytesReceived += data.size();
 
                 if (m_downloadBytesReceived >= m_downloadFileSize) {
-                    m_downloadFile->flush(); // 强制刷入磁盘
-                    m_downloadFile->close(); // 彻底释放系统文件锁
+                    m_downloadFile->flush();
+                    m_downloadFile->close();
                     delete m_downloadFile;
                     m_downloadFile = nullptr;
 
-                    // 重置状态并在最后一步发送信号，防止预览窗口提前抢占文件
                     m_isDownloading = false;
                     m_downloadFileSize = 0;
                     m_downloadBytesReceived = 0;
-                    emit downloadResult(true, "下载成功");
+                    emit downloadResult(true, "下载成功"); // 明确发送成功信号
                 }
             }
-            return;
+
+            // 如果还在下载中，说明当前包读完了，直接返回等待下一个包
+            if (m_isDownloading) {
+                return;
+            }
         }
 
-    m_buffer.append(m_socket->readAll());
+        // 处理非下载状态下（或刚才被加入缓冲池）的普通指令
+        m_buffer.append(m_socket->readAll());
 
-    // 处理服务器响应
-    while (m_buffer.contains('\n')) {
-        int pos = m_buffer.indexOf('\n');
-        QByteArray line = m_buffer.left(pos);
-        m_buffer.remove(0, pos + 1);
+        while (m_buffer.contains('\n')) {
+            int pos = m_buffer.indexOf('\n');
+            QByteArray line = m_buffer.left(pos);
+            m_buffer.remove(0, pos + 1);
 
         // 解析响应
         if (line.startsWith("LOGIN_OK")) {

@@ -32,7 +32,7 @@ bool DatabaseManager::connect()
     m_db.setHostName("localhost");
     m_db.setDatabaseName("wangpan");
     m_db.setUserName("root");
-    m_db.setPassword("");
+    m_db.setPassword("hebo");
 
     if (!m_db.open()) {
         qWarning("Failed to connect to database: %s", qPrintable(m_db.lastError().text()));
@@ -258,36 +258,38 @@ bool DatabaseManager::addFile(const QString &username, const QString &filename, 
 
 bool DatabaseManager::getFileList(const QString &username, const QString &directory, QList<QMap<QString, QVariant>> &fileList)
 {
-    // 实现获取文件列表逻辑
-    // 这里我们从文件系统中读取文件列表，而不是从数据库
-    QString userPath = "./files/" + username;
-    
-    // 如果directory不为空，则添加到路径中
-    if (!directory.isEmpty() && directory != "/") {
-        // 移除开头的斜杠
-        QString dir = directory;
-        if (dir.startsWith("/")) {
-            dir = dir.mid(1);
-        }
-        userPath += "/" + dir;
-    }
-    
-    QDir userDir(userPath);
-    if (!userDir.exists()) {
-        // 如果目录不存在，创建它
-        if (!userDir.mkpath(userPath)) {
-            qDebug() << "Failed to create directory:" << userPath;
-            return false;
-        }
-        qDebug() << "Created directory:" << userPath;
+    // 1. 保证用户的根目录始终存在
+    QString baseUserPath = "./files/" + username;
+    QDir baseDir(baseUserPath);
+    if (!baseDir.exists()) {
+        baseDir.mkpath(baseUserPath);
     }
 
-    // 获取所有文件和目录
-    QFileInfoList entries = userDir.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
-    qDebug() << "Found" << entries.size() << "entries in" << userPath;
+    // 2. 清理客户端传来的脏路径（去除首尾空格和斜杠）
+    QString cleanDir = directory.trimmed();
+    if (cleanDir.startsWith("/")) cleanDir = cleanDir.mid(1);
+    if (cleanDir.endsWith("/")) cleanDir = cleanDir.left(cleanDir.length() - 1);
+
+    // 3. 拼接目标路径
+    QString targetPath = baseUserPath;
+    if (!cleanDir.isEmpty()) {
+        targetPath += "/" + cleanDir;
+    }
+
+    QDir targetDir(targetPath);
+
+    // 4.如果是请求的子目录且不存在，直接返回失败,不要自动创建！
+    if (!targetDir.exists()) {
+        qDebug() << "Error: Target directory does not exist ->" << targetPath;
+        return false;
+    }
+
+    // 5. 正常读取文件列表
+    QFileInfoList entries = targetDir.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
     for (const QFileInfo &entry : entries) {
         QMap<QString, QVariant> file;
         file["name"] = entry.fileName();
+
         if (entry.isDir()) {
             file["size"] = 0;
             file["type"] = "dir";
@@ -295,43 +297,19 @@ bool DatabaseManager::getFileList(const QString &username, const QString &direct
             file["size"] = entry.size();
             file["type"] = entry.suffix();
         }
-        file["path"] = directory + (directory.endsWith("/") ? "" : "/") + entry.fileName();
+
+        // 规范化返回给客户端的路径格式，例如：/files 或 /doc/test.txt
+        QString outPath = "/" + cleanDir;
+        if (!cleanDir.isEmpty()) {
+            outPath += "/";
+        }
+        outPath += entry.fileName();
+        file["path"] = outPath;
+
         file["last_modified"] = entry.lastModified().toString();
         fileList.append(file);
-        qDebug() << "Added entry:" << entry.fileName();
     }
 
-    qDebug() << "Total files in list:" << fileList.size();
-    return true;
-}
-
-bool DatabaseManager::createDirectory(const QString &username, const QString &path)
-{
-    // 在文件系统中创建目录
-    QString userPath = "./files/" + username;
-    
-    // 如果path不为空且不是根目录，则添加到路径中
-    QString directoryPath = userPath;
-    if (!path.isEmpty() && path != "/") {
-        // 移除开头的斜杠
-        QString dir = path;
-        if (dir.startsWith("/")) {
-            dir = dir.mid(1);
-        }
-        directoryPath += "/" + dir;
-    }
-    
-    QDir dir;
-    if (!dir.exists(directoryPath)) {
-        if (dir.mkpath(directoryPath)) {
-            qDebug() << "Created directory:" << directoryPath;
-            return true;
-        } else {
-            qDebug() << "Failed to create directory:" << directoryPath;
-            return false;
-        }
-    }
-    
     return true;
 }
 

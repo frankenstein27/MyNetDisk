@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QCryptographicHash>
 #include <QDebug>
+#include <QDirIterator>
 
 FileManager *FileManager::m_instance = nullptr;
 
@@ -36,13 +37,8 @@ bool FileManager::init(const QString &basePath)
 bool FileManager::saveFile(const QString &username, const QString &filename, const QByteArray &data)
 {
     qDebug() << "=== FileManager::saveFile called ===";
-    qDebug() << "username:" << username;
-    qDebug() << "filename:" << filename;
-    qDebug() << "data size:" << data.size();
-    
     QString userPath = m_basePath + "/" + username;
-    qDebug() << "userPath:" << userPath;
-    
+
     QDir dir(userPath);
     if (!dir.exists()) {
         if (!dir.mkpath(userPath)) {
@@ -51,14 +47,10 @@ bool FileManager::saveFile(const QString &username, const QString &filename, con
     }
 
     QString filePath;
-    
-    // 如果filename包含路径（以/开头），则直接使用
     if (filename.startsWith("/")) {
-        // 移除开头的斜杠
         QString relativePath = filename.mid(1);
         filePath = userPath + "/" + relativePath;
-        
-        // 确保目录存在
+
         QDir fileDir = QFileInfo(filePath).dir();
         if (!fileDir.exists()) {
             fileDir.mkpath(fileDir.path());
@@ -66,9 +58,13 @@ bool FileManager::saveFile(const QString &username, const QString &filename, con
     } else {
         filePath = userPath + "/" + filename;
     }
-    
-    qDebug() << "filePath:" << filePath;
-    
+
+    // 新增：防止将数据写入到一个同名文件夹上
+    if (QFileInfo(filePath).isDir()) {
+        qDebug() << "Error: Target path is a directory, cannot save file:" << filePath;
+        return false;
+    }
+
     QFile file(filePath);
     if (!file.open(QIODevice::WriteOnly)) {
         qDebug() << "Failed to open file for writing";
@@ -77,51 +73,59 @@ bool FileManager::saveFile(const QString &username, const QString &filename, con
 
     qint64 written = file.write(data);
     file.close();
-    qDebug() << "written bytes:" << written;
     return written == data.size();
 }
 
 QByteArray FileManager::readFile(const QString &username, const QString &filename)
 {
     QString filePath;
-    
-    // 如果filename包含路径（以/开头），则直接使用
     if (filename.startsWith("/")) {
-        // 移除开头的斜杠
         QString relativePath = filename.mid(1);
         filePath = m_basePath + "/" + username + "/" + relativePath;
     } else {
         filePath = m_basePath + "/" + username + "/" + filename;
     }
-    
+
+    // 新增：拦截读取文件夹的操作
+    if (QFileInfo(filePath).isDir()) {
+        qDebug() << "Error: Cannot read a directory as a file:" << filePath;
+        return QByteArray();
+    }
+
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
-        qDebug() << "Failed to open file:" << filePath;
         return QByteArray();
     }
 
     QByteArray data = file.readAll();
     file.close();
-    qDebug() << "Read file:" << filePath << "size:" << data.size();
     return data;
 }
 
 bool FileManager::deleteFile(const QString &username, const QString &filename)
 {
     QString filePath;
-    
-    // 如果filename包含路径（以/开头），则直接使用
     if (filename.startsWith("/")) {
-        // 移除开头的斜杠
         QString relativePath = filename.mid(1);
         filePath = m_basePath + "/" + username + "/" + relativePath;
     } else {
         filePath = m_basePath + "/" + username + "/" + filename;
     }
-    
+
+    QFileInfo fileInfo(filePath);
+    if (!fileInfo.exists()) return false;
+
+    // 新增：如果检测到是文件夹，自动切换为递归删除文件夹逻辑
+    if (fileInfo.isDir()) {
+        QDir dir(filePath);
+        bool result = dir.removeRecursively();
+        qDebug() << "Delete directory:" << filePath << "result:" << result;
+        return result;
+    }
+
     QFile file(filePath);
     bool result = file.remove();
-    qDebug() << "Delete file:" << filePath << "result:" << result;
+    qDebug() << "Delete file:" << filePath << "result:" << result << "error:" << file.errorString();
     return result;
 }
 
@@ -129,41 +133,52 @@ bool FileManager::renameFile(const QString &username, const QString &oldFilename
 {
     QString oldPath;
     QString newPath;
-    
-    // 如果oldFilename包含路径（以/开头），则直接使用
+
     if (oldFilename.startsWith("/")) {
-        QString relativeOldPath = oldFilename.mid(1);
-        oldPath = m_basePath + "/" + username + "/" + relativeOldPath;
+        oldPath = m_basePath + "/" + username + "/" + oldFilename.mid(1);
     } else {
         oldPath = m_basePath + "/" + username + "/" + oldFilename;
     }
-    
-    // 如果newFilename包含路径（以/开头），则直接使用
+
     if (newFilename.startsWith("/")) {
-        QString relativeNewPath = newFilename.mid(1);
-        newPath = m_basePath + "/" + username + "/" + relativeNewPath;
+        newPath = m_basePath + "/" + username + "/" + newFilename.mid(1);
     } else {
         newPath = m_basePath + "/" + username + "/" + newFilename;
     }
-    
-    QFile file(oldPath);
-    bool result = file.rename(newPath);
-    qDebug() << "Rename file from" << oldPath << "to" << newPath << "result:" << result;
+
+    // 新增：确保目标路径的父级目录存在，否则重命名会失败
+    QDir newDir = QFileInfo(newPath).dir();
+    if (!newDir.exists()) {
+        newDir.mkpath(newDir.path());
+    }
+
+    QFileInfo fileInfo(oldPath);
+    bool result = false;
+
+    // 新增：针对文件夹和文件分别使用不同的重命名类
+    if (fileInfo.isDir()) {
+        QDir dir;
+        result = dir.rename(oldPath, newPath);
+        qDebug() << "Rename from" << oldPath << "to" << newPath << "result:" << result;
+    } else {
+        QFile file(oldPath);
+        result = file.rename(newPath);
+        qDebug() << "Rename from" << oldPath << "to" << newPath << "result:" << result << "error:" << file.errorString();
+    }
+
+
     return result;
 }
 
 bool FileManager::deleteDirectory(const QString &username, const QString &dirname)
 {
     QString dirPath;
-    
-    // 如果dirname包含路径（以/开头），则直接使用
     if (dirname.startsWith("/")) {
-        QString relativePath = dirname.mid(1);
-        dirPath = m_basePath + "/" + username + "/" + relativePath;
+        dirPath = m_basePath + "/" + username + "/" + dirname.mid(1);
     } else {
         dirPath = m_basePath + "/" + username + "/" + dirname;
     }
-    
+
     QDir dir(dirPath);
     if (dir.exists()) {
         return dir.removeRecursively();
@@ -178,46 +193,58 @@ bool FileManager::deleteUserFiles(const QString &username)
     if (userDir.exists()) {
         return userDir.removeRecursively();
     }
-    return true; // 如果目录不存在，也返回成功
+    return true;
 }
 
 bool FileManager::moveFile(const QString &username, const QString &oldPath, const QString &newPath)
 {
-    // 实现移动文件逻辑
-    return false;
+    // 补全：移动文件/文件夹本质上与重命名逻辑一致，可直接复用
+    return renameFile(username, oldPath, newPath);
 }
 
 qint64 FileManager::getFileSize(const QString &username, const QString &filename)
 {
     QString filePath;
-    
-    // 如果filename包含路径（以/开头），则直接使用
     if (filename.startsWith("/")) {
-        QString relativePath = filename.mid(1);
-        filePath = m_basePath + "/" + username + "/" + relativePath;
+        filePath = m_basePath + "/" + username + "/" + filename.mid(1);
     } else {
         filePath = m_basePath + "/" + username + "/" + filename;
     }
-    
-    QFile file(filePath);
-    if (!file.exists()) {
+
+    QFileInfo fileInfo(filePath);
+    if (!fileInfo.exists()) {
         return -1;
     }
-    return file.size();
+
+    // 新增：如果是文件夹，递归遍历计算其内部所有文件的总大小
+    if (fileInfo.isDir()) {
+        qint64 totalSize = 0;
+        QDirIterator it(filePath, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            it.next();
+            totalSize += it.fileInfo().size();
+        }
+        return totalSize;
+    }
+
+    return fileInfo.size();
 }
 
 QString FileManager::getFileHash(const QString &username, const QString &filename)
 {
     QString filePath;
-    
-    // 如果filename包含路径（以/开头），则直接使用
     if (filename.startsWith("/")) {
-        QString relativePath = filename.mid(1);
-        filePath = m_basePath + "/" + username + "/" + relativePath;
+        filePath = m_basePath + "/" + username + "/" + filename.mid(1);
     } else {
         filePath = m_basePath + "/" + username + "/" + filename;
     }
-    
+
+    // 新增：拦截文件夹哈希请求
+    if (QFileInfo(filePath).isDir()) {
+        qDebug() << "Error: Cannot calculate hash for a directory:" << filePath;
+        return QString();
+    }
+
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
         return QString();

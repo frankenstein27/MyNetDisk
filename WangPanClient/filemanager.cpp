@@ -79,10 +79,6 @@ bool FileManager::createDirectory(const QString &path)
     request.append("MKDIR " + path.toUtf8() + "\n");
     NetworkManager::instance()->socket()->write(request);
 
-    if (!NetworkManager::instance()->socket()->waitForBytesWritten()) {
-            return false;
-        }
-
     return NetworkManager::instance()->socket()->waitForBytesWritten();
 }
 

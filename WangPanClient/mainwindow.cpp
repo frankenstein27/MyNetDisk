@@ -27,80 +27,50 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(ui->backButton, &QPushButton::clicked, this, &MainWindow::HandleBackButton_clicked);
     
     // 连接文件管理器的信号
-    connect(FileManager::instance(), &FileManager::uploadResult, this, [=](bool success, const QString &message) {
-        if (success) {
-            ui->statusLabel->setText("上传成功");
-            // 上传成功后发送刷新文件列表请求
-            NetworkManager::instance()->listFiles(currentDirectory);
-        } else {
-            ui->statusLabel->setText("上传失败: " + message);
-        }
-    });
-    
-    connect(FileManager::instance(), &FileManager::downloadResult, this, [=](bool success, const QString &message) {
-        if (success) {
-            ui->statusLabel->setText("下载成功");
-            
-            // 如果是预览文件，打开预览窗口
-            if (!currentPreviewFile.isEmpty()) {
-                QString tempPath = QDir::tempPath() + "/" + currentPreviewFile;
-                PreviewWindow *previewWindow = new PreviewWindow(this);
-                previewWindow->setFile(tempPath, currentPreviewFile);
-                previewWindow->show();
-                ui->statusLabel->setText("预览文件: " + currentPreviewFile);
-                currentPreviewFile.clear();
-            }
-        } else {
-            ui->statusLabel->setText("下载失败: " + message);
-            currentPreviewFile.clear();
-        }
-    });
-    
-    connect(FileManager::instance(), &FileManager::deleteResult, this, &MainWindow::onDeleteResult);
-    
-    // 连接文件列表更新信号
     connect(FileManager::instance(), &FileManager::fileListUpdated, this, [=]() {
-        // 更新文件列表UI
-        ui->fileListWidget->clear();
-        QList<FileInfo> fileList = FileManager::instance()->getFileList();
-        
-        // 检查是否有待处理的目录
-        if (!pendingDirectory.isEmpty()) {
-                    // 只要点击了，无论里面是空还是满，都必须进入该目录更新路径
-                    pathHistory.append(currentDirectory);
-                    currentDirectory = pendingDirectory;
-                    pendingDirectory.clear();
+            // 更新文件列表UI
+            ui->fileListWidget->clear();
+            QList<FileInfo> fileList = FileManager::instance()->getFileList();
 
-                    if (fileList.isEmpty()) {
-                        ui->statusLabel->setText("该目录为空");
-                    }
+            // 检查是否有待处理的目录
+            if (!pendingDirectory.isEmpty()) {
+                pathHistory.append(currentDirectory);
+                currentDirectory = pendingDirectory;
+                pendingDirectory.clear();
+
+                if (fileList.isEmpty()) {
+                    ui->statusLabel->setText("该目录为空");
+                } else {
+                    // 成功进入且不为空，清除“正在进入”的提示
+                    ui->statusLabel->setText("已进入目录" + currentDirectory.split("/").back());
                 }
-        
-        QFileIconProvider iconProvider;
-        for (int i = 0; i < fileList.size(); ++i) {
-            FileInfo fileInfo = fileList[i];
-            QListWidgetItem *item = new QListWidgetItem(fileInfo.name(), ui->fileListWidget);
-            
-            // 设置图标
-            if (fileInfo.type() == "dir") {
-                item->setIcon(iconProvider.icon(QFileIconProvider::Folder));
-            } else {
-                item->setIcon(iconProvider.icon(QFileIconProvider::File));
             }
-            
-            // 存储文件信息
-            QVariantMap data;
-            data["name"] = fileInfo.name();
-            data["size"] = fileInfo.size();
-            data["type"] = fileInfo.type();
-            data["path"] = fileInfo.path();
-            data["modifyTime"] = fileInfo.modifyTime();
-            item->setData(Qt::UserRole, data);
-        }
-        
-        // 更新路径标签
-        ui->pathLabel->setText("当前路径: " + currentDirectory);
-    });
+
+            QFileIconProvider iconProvider;
+            for (int i = 0; i < fileList.size(); ++i) {
+                FileInfo fileInfo = fileList[i];
+                QListWidgetItem *item = new QListWidgetItem(fileInfo.name(), ui->fileListWidget);
+
+                // 设置图标
+                if (fileInfo.type() == "dir") {
+                    item->setIcon(iconProvider.icon(QFileIconProvider::Folder));
+                } else {
+                    item->setIcon(iconProvider.icon(QFileIconProvider::File));
+                }
+
+                // 存储文件信息
+                QVariantMap data;
+                data["name"] = fileInfo.name();
+                data["size"] = fileInfo.size();
+                data["type"] = fileInfo.type();
+                data["path"] = fileInfo.path();
+                data["modifyTime"] = fileInfo.modifyTime();
+                item->setData(Qt::UserRole, data);
+            }
+
+            // 更新路径标签
+            ui->pathLabel->setText("当前路径: " + currentDirectory);
+        });
     
     // 连接文件管理器的上传进度信号
     connect(FileManager::instance(), &FileManager::uploadProgress, this, [=](qint64 bytesSent, qint64 bytesTotal) {
@@ -279,7 +249,8 @@ void MainWindow::HandleFileListWidget_itemDoubleClicked(QListWidgetItem *item)
             QFile::remove(tempPath);
         }
         ui->statusLabel->setText("正在下载文件: " + fileName);
-        FileManager::instance()->downloadFile(filePath, tempPath);
+        bool res = FileManager::instance()->downloadFile(filePath, tempPath);
+        qDebug() << "download file" << fileName << ":" << res;
     }
 }
 
@@ -289,7 +260,7 @@ void MainWindow::HandleBackButton_clicked()
     if (!pathHistory.isEmpty()) {
         currentDirectory = pathHistory.takeLast();
         NetworkManager::instance()->listFiles(currentDirectory);
-        ui->statusLabel->setText("返回目录: " + currentDirectory);
+        ui->statusLabel->setText("返回目录: " + currentDirectory.split("/").back());
     } else {
         ui->statusLabel->setText("已经是根目录");
     }
@@ -310,4 +281,5 @@ void MainWindow::on_actionRefresh_triggered()
 {
     ui->statusLabel->setText("正在刷新...");
     NetworkManager::instance()->listFiles(currentDirectory);
+    ui->statusLabel->setText("刷新完成");
 }

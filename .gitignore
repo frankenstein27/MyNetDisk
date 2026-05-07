@@ -23,3 +23,7 @@ WangPanClient/build/
 WangPanServer/build/
 
 WangPanServer/databasemanager.cpp
+
+WangPanServerExe/
+
+WangPanClientExe/

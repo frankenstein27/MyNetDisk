@@ -79,7 +79,14 @@ bool FileManager::createDirectory(const QString &path)
     request.append("MKDIR " + path.toUtf8() + "\n");
     NetworkManager::instance()->socket()->write(request);
 
-    return NetworkManager::instance()->socket()->waitForBytesWritten();
+    if (!NetworkManager::instance()->socket()->waitForBytesWritten()) {
+            return false;
+        }
+
+        // 读取响应
+        QByteArray response = NetworkManager::instance()->socket()->readLine();
+        QString line = QString::fromUtf8(response);
+        return line.startsWith("MKDIR_OK");
 }
 
 bool FileManager::deleteFile(const QString &path)
@@ -106,7 +113,14 @@ bool FileManager::renameFile(const QString &oldPath, const QString &newPath)
     request.append("RENAME " + oldPath.toUtf8() + " " + newPath.toUtf8() + "\n");
     NetworkManager::instance()->socket()->write(request);
 
-    return NetworkManager::instance()->socket()->waitForBytesWritten();
+    if (!NetworkManager::instance()->socket()->waitForBytesWritten()) {
+            return false;
+        }
+
+        // 读取响应
+        QByteArray response = NetworkManager::instance()->socket()->readLine();
+        QString line = QString::fromUtf8(response);
+        return line.startsWith("RENAME_OK");
 }
 
 void FileManager::handleUploadResult(bool success, const QString &message)

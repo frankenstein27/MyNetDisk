@@ -244,21 +244,18 @@ void NetworkManager::onError(QAbstractSocket::SocketError error)
 
 void NetworkManager::onReadyRead()
 {
-    // 如果正在下载文件，处理下载数据
     if (m_isDownloading && m_downloadFile) {
-        // 检查是否收到DOWNLOAD_OK响应
-        if (m_downloadFileSize == 0) {
-            // 还没有收到文件大小，尝试读取
-            if (m_socket->canReadLine()) {
-                QByteArray response = m_socket->readLine();
-                QString line = QString::fromUtf8(response);
-                
+            if (m_downloadFileSize == 0) {
+                // 必须等待有一整行数据到来
+                if (!m_socket->canReadLine()) return;
+
+                // 使用 trimmed() 彻底清除 \r\n 等不可见字符的干扰
+                QString line = QString::fromUtf8(m_socket->readLine()).trimmed();
+
                 if (line.startsWith("DOWNLOAD_OK")) {
-                    m_downloadFileSize = line.mid(11).toLongLong();
-                    qDebug() << "Download file size:" << m_downloadFileSize;
+                    m_downloadFileSize = line.mid(11).trimmed().toLongLong();
                 } else if (line.startsWith("DOWNLOAD_FAIL")) {
-                    QString message = line.mid(13);
-                    emit downloadResult(false, message);
+                    emit downloadResult(false, line.mid(13));
                     m_downloadFile->close();
                     delete m_downloadFile;
                     m_downloadFile = nullptr;
@@ -266,36 +263,27 @@ void NetworkManager::onReadyRead()
                     return;
                 }
             }
-        }
-        
-        // 接收文件数据
-        if (m_downloadFileSize > 0) {
-            while (m_socket->bytesAvailable() > 0) {
+
+            if (m_downloadFileSize > 0 && m_socket->bytesAvailable() > 0) {
                 QByteArray data = m_socket->readAll();
                 m_downloadFile->write(data);
                 m_downloadBytesReceived += data.size();
-                emit downloadProgress(m_downloadBytesReceived, m_downloadFileSize);
-                
-                // 检查是否下载完成
+
                 if (m_downloadBytesReceived >= m_downloadFileSize) {
-                    m_downloadFile->close();
+                    m_downloadFile->flush(); // 强制刷入磁盘
+                    m_downloadFile->close(); // 彻底释放系统文件锁
                     delete m_downloadFile;
                     m_downloadFile = nullptr;
+
+                    // 重置状态并在最后一步发送信号，防止预览窗口提前抢占文件
                     m_isDownloading = false;
                     m_downloadFileSize = 0;
                     m_downloadBytesReceived = 0;
                     emit downloadResult(true, "下载成功");
-                    return;
                 }
             }
+            return;
         }
-        
-        // 继续读取更多数据
-        if (m_socket->bytesAvailable() > 0) {
-            onReadyRead();
-        }
-        return;
-    }
 
     m_buffer.append(m_socket->readAll());
 

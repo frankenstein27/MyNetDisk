@@ -22,9 +22,9 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->directoryTree->expandAll();
 
     // 连接信号和槽
-    connect(ui->directoryTree, &QTreeWidget::itemClicked, this, &MainWindow::on_directoryTree_itemClicked);
-    connect(ui->fileListWidget, &QListWidget::itemDoubleClicked, this, &MainWindow::on_fileListWidget_itemDoubleClicked);
-    connect(ui->backButton, &QPushButton::clicked, this, &MainWindow::on_backButton_clicked);
+    connect(ui->directoryTree, &QTreeWidget::itemClicked, this, &MainWindow::HandleDirectoryTree_itemClicked);
+    connect(ui->fileListWidget, &QListWidget::itemDoubleClicked, this, &MainWindow::HandleFileListWidget_itemDoubleClicked);
+    connect(ui->backButton, &QPushButton::clicked, this, &MainWindow::HandleBackButton_clicked);
     
     // 连接文件管理器的信号
     connect(FileManager::instance(), &FileManager::uploadResult, this, [=](bool success, const QString &message) {
@@ -248,13 +248,13 @@ void MainWindow::on_logoutButton_clicked()
     emit logoutRequested();
 }
 
-void MainWindow::on_directoryTree_itemClicked(QTreeWidgetItem *item, int column)
+void MainWindow::HandleDirectoryTree_itemClicked(QTreeWidgetItem *item, int column)
 {
     currentDirectory = item->data(0, Qt::UserRole).toString();
     NetworkManager::instance()->listFiles(currentDirectory);
 }
 
-void MainWindow::on_fileListWidget_itemDoubleClicked(QListWidgetItem *item)
+void MainWindow::HandleFileListWidget_itemDoubleClicked(QListWidgetItem *item)
 {
     // 获取文件信息
     QVariantMap data = item->data(Qt::UserRole).toMap();
@@ -280,7 +280,7 @@ void MainWindow::on_fileListWidget_itemDoubleClicked(QListWidgetItem *item)
     }
 }
 
-void MainWindow::on_backButton_clicked()
+void MainWindow::HandleBackButton_clicked()
 {
     // 如果有历史路径，返回上一级目录
     if (!pathHistory.isEmpty()) {

@@ -317,7 +317,7 @@ void NetworkManager::onReadyRead()
             QString message = QString::fromUtf8(line.mid(13));
             emit registerResult(false, message);
         } else if (line.startsWith("FILE_LIST")) {
-            emit fileListReceived(line.mid(9));
+            emit fileListReceived(line.mid(10));
         } else if (line.startsWith("UPLOAD_OK")) {
             emit uploadResult(true, "上传成功");
         } else if (line.startsWith("UPLOAD_FAIL")) {

@@ -66,20 +66,15 @@ MainWindow::MainWindow(QWidget *parent) :
         
         // 检查是否有待处理的目录
         if (!pendingDirectory.isEmpty()) {
-            if (fileList.isEmpty()) {
-                // 如果目录为空，不更新当前路径
-                ui->statusLabel->setText("目录为空，无法进入");
-                pendingDirectory.clear();
-                // 重新加载当前目录的文件列表
-                NetworkManager::instance()->listFiles(currentDirectory);
-                return;
-            } else {
-                // 目录不为空，更新当前路径
-                pathHistory.append(currentDirectory);
-                currentDirectory = pendingDirectory;
-                pendingDirectory.clear();
-            }
-        }
+                    // 只要点击了，无论里面是空还是满，都必须进入该目录更新路径
+                    pathHistory.append(currentDirectory);
+                    currentDirectory = pendingDirectory;
+                    pendingDirectory.clear();
+
+                    if (fileList.isEmpty()) {
+                        ui->statusLabel->setText("该目录为空");
+                    }
+                }
         
         QFileIconProvider iconProvider;
         for (int i = 0; i < fileList.size(); ++i) {

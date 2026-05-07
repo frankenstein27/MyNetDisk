@@ -169,6 +169,9 @@ void MainWindow::on_actionDownloadFile_triggered()
         QString fileName = data["name"].toString();
         QString savePath = QFileDialog::getSaveFileName(this, "保存文件", QDir::homePath() + "/" + fileName);
         if (!savePath.isEmpty()) {
+            if (QFile::exists(savePath)) {
+                QFile::remove(savePath); // 强制覆盖，避开续传Bug
+            }
             ui->statusLabel->setText("正在下载文件...");
             FileManager::instance()->downloadFile(buildPath(fileName), savePath);
         }
@@ -237,6 +240,9 @@ void MainWindow::on_downloadButton_clicked()
         QString fileName = data["name"].toString();
         QString savePath = QFileDialog::getSaveFileName(this, "保存文件", QDir::homePath() + "/" + fileName);
         if (!savePath.isEmpty()) {
+            if (QFile::exists(savePath)) {
+                QFile::remove(savePath); // 强制覆盖，避开续传Bug
+            }
             ui->statusLabel->setText("正在下载文件...");
             FileManager::instance()->downloadFile(buildPath(fileName), savePath);
         }
@@ -274,6 +280,11 @@ void MainWindow::on_fileListWidget_itemDoubleClicked(QListWidgetItem *item)
         // 如果是文件，异步下载文件到临时目录进行预览
         currentPreviewFile = fileName;
         QString tempPath = QDir::tempPath() + "/" + fileName;
+
+        // 如果缓存已存在则必须删除，避免触发错误的断点续传
+        if (QFile::exists(tempPath)) {
+            QFile::remove(tempPath);
+        }
         ui->statusLabel->setText("正在下载文件: " + fileName);
         FileManager::instance()->downloadFile(filePath, tempPath);
     }
@@ -281,14 +292,23 @@ void MainWindow::on_fileListWidget_itemDoubleClicked(QListWidgetItem *item)
 
 void MainWindow::on_backButton_clicked()
 {
-    // 如果有历史路径，返回上一级目录
-    if (!pathHistory.isEmpty()) {
-        currentDirectory = pathHistory.takeLast();
-        NetworkManager::instance()->listFiles(currentDirectory);
-        ui->statusLabel->setText("返回目录: " + currentDirectory);
-    } else {
+    if (currentDirectory == "/" || currentDirectory.isEmpty()) {
         ui->statusLabel->setText("已经是根目录");
+        return;
     }
+
+    // 将路径用 '/' 切割成数组，自动过滤掉多余的斜杠
+    QStringList parts = currentDirectory.split('/', QString::SkipEmptyParts);
+    if (parts.size() <= 1) {
+        currentDirectory = "/";
+    } else {
+        // 移除当前所在目录，重新拼接成上一级路径
+        parts.removeLast();
+        currentDirectory = "/" + parts.join("/");
+    }
+
+    NetworkManager::instance()->listFiles(currentDirectory);
+    ui->statusLabel->setText("返回目录: " + currentDirectory);
 }
 
 void MainWindow::onDeleteResult(bool success, const QString &message)
@@ -300,4 +320,10 @@ void MainWindow::onDeleteResult(bool success, const QString &message)
     } else {
         ui->statusLabel->setText("文件删除失败: " + message);
     }
+}
+
+void MainWindow::on_actionRefresh_triggered()
+{
+    ui->statusLabel->setText("正在刷新...");
+    NetworkManager::instance()->listFiles(currentDirectory);
 }

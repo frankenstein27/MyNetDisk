@@ -44,6 +44,7 @@ private slots:
     void on_actionExit_triggered();
     void onDeleteResult(bool success, const QString &message);
     void on_backButton_clicked();
+    void on_actionRefresh_triggered();
 
 private:
     Ui::MainWindow *ui;

@@ -313,6 +313,36 @@ bool DatabaseManager::getFileList(const QString &username, const QString &direct
     return true;
 }
 
+bool DatabaseManager::createDirectory(const QString &username, const QString &path)
+{
+    // 在文件系统中创建目录
+    QString userPath = "./files/" + username;
+
+    // 如果path不为空且不是根目录，则添加到路径中
+    QString directoryPath = userPath;
+    if (!path.isEmpty() && path != "/") {
+        // 移除开头的斜杠
+        QString dir = path;
+        if (dir.startsWith("/")) {
+            dir = dir.mid(1);
+        }
+        directoryPath += "/" + dir;
+    }
+
+    QDir dir;
+    if (!dir.exists(directoryPath)) {
+        if (dir.mkpath(directoryPath)) {
+            qDebug() << "Created directory:" << directoryPath;
+            return true;
+        } else {
+            qDebug() << "Failed to create directory:" << directoryPath;
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool DatabaseManager::getDirectoryList(const QString &username, int parentId, QList<QMap<QString, QVariant>> &directoryList)
 {
     // 实现获取目录列表逻辑

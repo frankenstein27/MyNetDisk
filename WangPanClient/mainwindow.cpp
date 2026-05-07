@@ -275,6 +275,9 @@ void MainWindow::HandleFileListWidget_itemDoubleClicked(QListWidgetItem *item)
         currentPreviewFile = fileName;
         QString tempPath = QDir::tempPath() + "/" + fileName;
 
+        if (QFile::exists(tempPath)) {
+            QFile::remove(tempPath);
+        }
         ui->statusLabel->setText("正在下载文件: " + fileName);
         FileManager::instance()->downloadFile(filePath, tempPath);
     }

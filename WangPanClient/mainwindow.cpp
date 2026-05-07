@@ -6,6 +6,13 @@
 #include <QMessageBox>
 #include <QApplication>
 #include <QFileIconProvider>
+#include <QtGlobal>   // 确保 QT_VERSION 宏可用
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QRegularExpression>
+#else
+#include <QRegExp>
+#endif
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -135,7 +142,11 @@ void MainWindow::on_actionNewDirectory_triggered()
     if (ok && !dirName.isEmpty()) {
 
         // 校验系统不允许的文件名特殊字符
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        QRegularExpression rx("[\\\\/:*?\"<>|]");
+#else
         QRegExp rx("[\\\\/:*?\"<>|]");
+#endif
         if (dirName.contains(rx)) {
             ui->statusLabel->setText("创建失败: 目录名不能包含 \\ / : * ? \" < > | 等字符");
             return;

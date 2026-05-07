@@ -1,15 +1,25 @@
 build-WangPanClient-Desktop_Qt_5_14_2_GCC_64bit-Debug/
+
 build-WangPanServer-Desktop_Qt_5_14_2_GCC_64bit-Debug/
+
 .git
+
 WangPanClient/WangPanClient.pro.user.a45b386.4.10-pre1
+
 WangPanClient/WangPanClient.pro.user
+
 WangPanServer/WangPanServer.pro.user
 
 WangPanClient/WangPanClient.pro
+
 WangPanServer/WangPanServer.pro
 
 WangPanClient/WangPanClient.pro.user.3bda842
+
 WangPanServer/WangPanServer.pro.user.3bda842
+
 WangPanClient/build/
+
 WangPanServer/build/
+
 WangPanServer\databasemanager.cpp

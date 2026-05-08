@@ -217,6 +217,9 @@
     <addaction name="actionDownloadFile"/>
     <addaction name="actionDelete"/>
     <addaction name="actionRename"/>
+    <addaction name="separator"/>
+    <addaction name="actionClearPreview"/>
+    <addaction name="separator"/>
     <addaction name="actionExit"/>
    </widget>
    <widget class="QMenu" name="menuEdit">
@@ -233,6 +236,13 @@
     </property>
     <addaction name="actionRefresh"/>
    </widget>
+   <widget class="QMenu" name="menuAccount">
+    <property name="title">
+     <string>账户</string>
+    </property>
+    <addaction name="actionChangePassword"/>
+    <addaction name="actionDeleteAccount"/>
+   </widget>
    <widget class="QMenu" name="menuHelp">
     <property name="title">
      <string>帮助</string>
@@ -242,6 +252,7 @@
    <addaction name="menuFile"/>
    <addaction name="menuEdit"/>
    <addaction name="menuView"/>
+   <addaction name="menuAccount"/>
    <addaction name="menuHelp"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
@@ -275,6 +286,16 @@
     <string>退出</string>
    </property>
   </action>
+  <action name="actionChangePassword">
+   <property name="text">
+    <string>修改密码</string>
+   </property>
+  </action>
+  <action name="actionDeleteAccount">
+   <property name="text">
+    <string>注销账号</string>
+   </property>
+  </action>
   <action name="actionCopy">
    <property name="text">
     <string>复制</string>
@@ -293,6 +314,11 @@
   <action name="actionRefresh">
    <property name="text">
     <string>刷新</string>
+   </property>
+  </action>
+  <action name="actionClearPreview">
+   <property name="text">
+    <string>清理已下载的预览文件</string>
    </property>
   </action>
   <action name="actionAbout">

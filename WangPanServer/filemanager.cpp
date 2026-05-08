@@ -86,7 +86,7 @@ QByteArray FileManager::readFile(const QString &username, const QString &filenam
         filePath = m_basePath + "/" + username + "/" + filename;
     }
 
-    // 新增：拦截读取文件夹的操作
+    // 拦截读取文件夹的操作
     if (QFileInfo(filePath).isDir()) {
         qDebug() << "Error: Cannot read a directory as a file:" << filePath;
         return QByteArray();
@@ -115,7 +115,7 @@ bool FileManager::deleteFile(const QString &username, const QString &filename)
     QFileInfo fileInfo(filePath);
     if (!fileInfo.exists()) return false;
 
-    // 新增：如果检测到是文件夹，自动切换为递归删除文件夹逻辑
+    // 如果检测到是文件夹，自动切换为递归删除文件夹逻辑
     if (fileInfo.isDir()) {
         QDir dir(filePath);
         bool result = dir.removeRecursively();
@@ -125,7 +125,7 @@ bool FileManager::deleteFile(const QString &username, const QString &filename)
 
     QFile file(filePath);
     bool result = file.remove();
-    qDebug() << "Delete file:" << filePath << "result:" << result << "error:" << file.errorString();
+    qDebug() << "Delete file:" << filePath << "result:" << result;
     return result;
 }
 
@@ -146,7 +146,7 @@ bool FileManager::renameFile(const QString &username, const QString &oldFilename
         newPath = m_basePath + "/" + username + "/" + newFilename;
     }
 
-    // 新增：确保目标路径的父级目录存在，否则重命名会失败
+    // 确保目标路径的父级目录存在，否则重命名会失败
     QDir newDir = QFileInfo(newPath).dir();
     if (!newDir.exists()) {
         newDir.mkpath(newDir.path());
@@ -155,7 +155,7 @@ bool FileManager::renameFile(const QString &username, const QString &oldFilename
     QFileInfo fileInfo(oldPath);
     bool result = false;
 
-    // 新增：针对文件夹和文件分别使用不同的重命名类
+    // 针对文件夹和文件分别使用不同的重命名类
     if (fileInfo.isDir()) {
         QDir dir;
         result = dir.rename(oldPath, newPath);
@@ -198,7 +198,7 @@ bool FileManager::deleteUserFiles(const QString &username)
 
 bool FileManager::moveFile(const QString &username, const QString &oldPath, const QString &newPath)
 {
-    // 补全：移动文件/文件夹本质上与重命名逻辑一致，可直接复用
+    // 移动文件/文件夹本质上与重命名逻辑一致，可直接复用
     return renameFile(username, oldPath, newPath);
 }
 
@@ -216,7 +216,7 @@ qint64 FileManager::getFileSize(const QString &username, const QString &filename
         return -1;
     }
 
-    // 新增：如果是文件夹，递归遍历计算其内部所有文件的总大小
+    // 如果是文件夹，递归遍历计算其内部所有文件的总大小
     if (fileInfo.isDir()) {
         qint64 totalSize = 0;
         QDirIterator it(filePath, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
@@ -239,7 +239,7 @@ QString FileManager::getFileHash(const QString &username, const QString &filenam
         filePath = m_basePath + "/" + username + "/" + filename;
     }
 
-    // 新增：拦截文件夹哈希请求
+    // 拦截文件夹哈希请求
     if (QFileInfo(filePath).isDir()) {
         qDebug() << "Error: Cannot calculate hash for a directory:" << filePath;
         return QString();

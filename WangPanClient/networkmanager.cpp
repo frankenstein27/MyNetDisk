@@ -1,172 +1,228 @@
 #include "networkmanager.h"
+
+#include <QByteArray>
+#include <QCryptographicHash>
+#include <QDebug>
 #include <QFile>
 #include <QFileInfo>
-#include <QByteArray>
-#include <QDebug>
-NetworkManager *NetworkManager::m_instance = nullptr;
+#include <QTimer>
+#include <QUrl>
 
-NetworkManager::NetworkManager(QObject *parent) : QObject(parent)
-{
+// 协议字段百分号编码（处理空格等特殊字符）
+static QString encodeField(const QString& field) { return QString::fromUtf8(QUrl::toPercentEncoding(field)); }
+
+// 客户端侧密码哈希（SHA-256），避免明文传输
+static QString hashPassword(const QString& password) { return QCryptographicHash::hash(password.toUtf8(), QCryptographicHash::Sha256).toHex(); }
+NetworkManager* NetworkManager::m_instance = nullptr;
+
+NetworkManager::NetworkManager(QObject* parent) : QObject(parent) {
     m_socket = new QTcpSocket(this);
     m_serverAddress = "127.0.0.1";
     m_serverPort = 8888;
     m_isDownloading = false;
+    m_isUploading = false;
     m_downloadFile = nullptr;
     m_downloadFileSize = 0;
     m_downloadBytesReceived = 0;
+    m_uploadFile = nullptr;
+    m_uploadFileSize = 0;
+    m_uploadBytesSent = 0;
+    m_isCheckingUpload = false;
 
     connect(m_socket, &QTcpSocket::connected, this, &NetworkManager::onConnected);
     connect(m_socket, &QTcpSocket::disconnected, this, &NetworkManager::onDisconnected);
-    //connect(m_socket, &QTcpSocket::errorOccurred, this, &NetworkManager::onError);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    connect(m_socket, &QTcpSocket::errorOccurred, this, &NetworkManager::onError);
+#else
+    connect(m_socket, QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::error), this, &NetworkManager::onError);
+#endif
     connect(m_socket, &QTcpSocket::readyRead, this, &NetworkManager::onReadyRead);
 }
 
-NetworkManager::~NetworkManager()
-{
-    delete m_socket;
-}
+NetworkManager::~NetworkManager() { delete m_socket; }
 
-NetworkManager *NetworkManager::instance()
-{
+NetworkManager* NetworkManager::instance() {
     if (!m_instance) {
         m_instance = new NetworkManager();
     }
     return m_instance;
 }
 
-bool NetworkManager::connectToServer()
-{
+bool NetworkManager::connectToServer() {
     m_socket->connectToHost(m_serverAddress, m_serverPort);
     return m_socket->waitForConnected(5000);
 }
 
-void NetworkManager::disconnectFromServer()
-{
-    m_socket->disconnectFromHost();
-}
+void NetworkManager::disconnectFromServer() { m_socket->disconnectFromHost(); }
 
-bool NetworkManager::isConnected() const
-{
-    return m_socket->state() == QTcpSocket::ConnectedState;
-}
+bool NetworkManager::isConnected() const { return m_socket->state() == QTcpSocket::ConnectedState; }
 
-bool NetworkManager::login(const QString &username, const QString &password)
-{
+void NetworkManager::login(const QString& username, const QString& password) {
     if (!isConnected()) {
         emit error("未连接到服务器");
-        return false;
+        return;
     }
 
     // 构建登录请求
     QByteArray request;
-    request.append("LOGIN " + username.toUtf8() + " " + password.toUtf8() + "\n");
+    request.append("LOGIN " + encodeField(username).toUtf8() + " " + hashPassword(password).toUtf8() + "\n");
     m_socket->write(request);
-    return m_socket->waitForBytesWritten();
+    m_socket->flush();
 }
 
-bool NetworkManager::registerUser(const QString &username, const QString &email, const QString &password, const QString &nickname)
-{
+void NetworkManager::registerUser(const QString& username, const QString& email, const QString& password, const QString& nickname) {
     if (!isConnected()) {
         emit error("未连接到服务器");
-        return false;
+        return;
     }
 
     // 构建注册请求
     QByteArray request;
-    request.append("REGISTER " + username.toUtf8() + " " + email.toUtf8() + " " + password.toUtf8() + " " + nickname.toUtf8() + "\n");
+    request.append("REGISTER " + encodeField(username).toUtf8() + " " + encodeField(email).toUtf8() + " " + hashPassword(password).toUtf8() + " " + encodeField(nickname).toUtf8() + "\n");
     m_socket->write(request);
-    return m_socket->waitForBytesWritten();
+    m_socket->flush();
 }
 
-bool NetworkManager::uploadFile(const QString &localPath, const QString &remotePath)
-{
+void NetworkManager::changePassword(const QString& oldPassword, const QString& newPassword, const QString& confirmPassword) {
+    if (!isConnected()) {
+        emit error("未连接到服务器");
+        return;
+    }
+    QByteArray request;
+    request.append("CHANGE_PASSWORD " + encodeField(oldPassword).toUtf8() + " " + encodeField(newPassword).toUtf8() + " " + encodeField(confirmPassword).toUtf8() + "\n");
+    m_socket->write(request);
+    m_socket->flush();
+}
+
+void NetworkManager::deleteUser() {
+    if (!isConnected()) {
+        emit error("未连接到服务器");
+        return;
+    }
+    m_socket->write("DELETE_USER\n");
+    m_socket->flush();
+}
+
+bool NetworkManager::uploadFile(const QString& localPath, const QString& remotePath) {
     if (!isConnected()) {
         emit error("未连接到服务器");
         return false;
     }
 
-    // 打开本地文件
-    QFile file(localPath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        emit error("无法打开本地文件");
+    if (m_isUploading || m_isCheckingUpload) {
+        emit error("正在上传其他文件");
         return false;
     }
 
-    qint64 fileSize = file.size();
-    QString fileName = QFileInfo(file).fileName();
-    
-    qDebug() << "=== uploadFile called ===";
-    qDebug() << "localPath:" << localPath;
-    qDebug() << "remotePath:" << remotePath;
-    qDebug() << "fileName:" << fileName;
-    qDebug() << "fileSize:" << fileSize;
+    QString fileName = QFileInfo(localPath).fileName();
 
-    // 发送上传请求（不使用断点续传，简化逻辑）
-    QByteArray request;
-    qint64 offset = 0;
-    request.append("UPLOAD " + remotePath.toUtf8() + " " + QString::number(fileSize).toUtf8() + " " + fileName.toUtf8() + " " + QString::number(offset).toUtf8() + "\n");
-    qDebug() << "UPLOAD request:" << request;
-    m_socket->write(request);
-    if (!m_socket->waitForBytesWritten()) {
-        qDebug() << "Failed to write UPLOAD request";
-        file.close();
-        return false;
-    }
-    qDebug() << "UPLOAD request sent successfully";
+    // 第一阶段：发送 UPLOAD_CHECK 查询服务器文件状态
+    m_isCheckingUpload = true;
+    m_checkLocalPath = localPath;
+    m_checkRemotePath = remotePath;
+    m_checkFileName = fileName;
 
-    // 等待服务器准备接收数据
-    QThread::msleep(100);
+    qDebug() << "=== UPLOAD_CHECK phase ===";
+    qDebug() << "localPath:" << localPath << "remotePath:" << remotePath << "fileName:" << fileName;
 
-    // 分块上传文件
-    const int chunkSize = 1024 * 1024; // 1MB
-    char buffer[chunkSize];
-    qint64 bytesSent = offset;
-    qint64 bytesToSend = fileSize - offset;
+    QByteArray checkRequest;
+    checkRequest.append("UPLOAD_CHECK " + encodeField(remotePath).toUtf8() + " " + encodeField(fileName).toUtf8() + "\n");
+    m_socket->write(checkRequest);
 
-    qDebug() << "Uploading file:" << fileName;
-    qDebug() << "File size:" << fileSize << "Offset:" << offset;
-    qDebug() << "Bytes to send:" << bytesToSend;
-    qDebug() << "File at end:" << file.atEnd();
-    qDebug() << "File position:" << file.pos();
-
-    while (!file.atEnd() && bytesSent < fileSize) {
-        qint64 bytesRead = file.read(buffer, chunkSize);
-        qDebug() << "Read" << bytesRead << "bytes from file";
-        if (bytesRead > 0) {
-            // 确保不发送超过剩余的数据量
-            if (bytesSent + bytesRead > fileSize) {
-                bytesRead = fileSize - bytesSent;
-                qDebug() << "Adjusted bytesRead to" << bytesRead;
-            }
-
-            qint64 bytesWritten = m_socket->write(buffer, bytesRead);
-            qDebug() << "Wrote" << bytesWritten << "bytes to socket";
-            if (bytesWritten != bytesRead) {
-                qDebug() << "Error: bytes written != bytes read";
-            }
-            bytesSent += bytesRead;
-            emit uploadProgress(bytesSent, fileSize);
-            qDebug() << "Sent:" << bytesSent << "/" << fileSize;
-        } else if (bytesRead == -1) {
-            qDebug() << "Error reading from file";
-            break;
-        }
-    }
-
-    qDebug() << "Upload completed: sent" << bytesSent << "bytes";
-    qDebug() << "File at end after upload:" << file.atEnd();
-    qDebug() << "Final file position:" << file.pos();
-
-    file.close();
-    
-    qDebug() << "Upload finished, waiting for server response";
-    
-    // 响应会由onReadyRead函数处理，不需要在这里等待
+    // 响应 UPLOAD_RESUME / UPLOAD_NEW 由 onReadyRead 处理
     return true;
 }
 
-bool NetworkManager::downloadFile(const QString &remotePath, const QString &localPath)
-{
+// 第二阶段：收到服务器响应后，发送 UPLOAD 头并开始传数据
+void NetworkManager::startUploadTransfer(qint64 offset) {
+    m_isCheckingUpload = false;
+
+    m_uploadFile = new QFile(m_checkLocalPath);
+    if (!m_uploadFile->open(QIODevice::ReadOnly)) {
+        emit error("无法打开本地文件");
+        delete m_uploadFile;
+        m_uploadFile = nullptr;
+        return;
+    }
+
+    m_uploadFileSize = m_uploadFile->size();
+    m_uploadBytesSent = offset;
+    m_uploadRemotePath = m_checkRemotePath;
+    m_isUploading = true;
+
+    qDebug() << "=== startUploadTransfer ===";
+    qDebug() << "offset:" << offset << "fileSize:" << m_uploadFileSize;
+
+    // 如果偏移量超过文件大小，视为已完成
+    if (offset >= m_uploadFileSize) {
+        qDebug() << "File already fully uploaded";
+        m_uploadFile->close();
+        delete m_uploadFile;
+        m_uploadFile = nullptr;
+        m_isUploading = false;
+        emit uploadResult(true, "文件已存在");
+        return;
+    }
+
+    // 定位到续传位置
+    if (offset > 0) {
+        m_uploadFile->seek(offset);
+    }
+
+    // 发送 UPLOAD 请求头
+    QByteArray request;
+    request.append("UPLOAD " + encodeField(m_checkRemotePath).toUtf8() + " " + QString::number(m_uploadFileSize).toUtf8() + " " + encodeField(m_checkFileName).toUtf8() + " " +
+                   QString::number(offset).toUtf8() + "\n");
+    qDebug() << "UPLOAD request:" << request;
+    m_socket->write(request);
+
+    if (!m_socket->waitForBytesWritten(5000)) {
+        qDebug() << "Failed to write UPLOAD request";
+        m_uploadFile->close();
+        delete m_uploadFile;
+        m_uploadFile = nullptr;
+        m_isUploading = false;
+        return;
+    }
+
+    qDebug() << "UPLOAD request sent, starting async data transfer";
+
+    // 启动异步分块上传
+    QTimer::singleShot(50, this, &NetworkManager::sendNextChunk);
+}
+
+void NetworkManager::sendNextChunk() {
+    if (!m_isUploading || !m_uploadFile) return;
+
+    // 防止发送缓冲区膨胀：如果待发送数据超过 1MB，等待缓冲区排空
+    if (m_socket->bytesToWrite() > 1024 * 1024) {
+        QTimer::singleShot(50, this, &NetworkManager::sendNextChunk);
+        return;
+    }
+
+    const int chunkSize = 64 * 1024;  // 64KB 每块
+    QByteArray chunk = m_uploadFile->read(chunkSize);
+
+    if (chunk.isEmpty()) {
+        // 文件数据发送完毕
+        qDebug() << "Upload data transfer complete: sent" << m_uploadBytesSent << "bytes";
+        m_uploadFile->close();
+        delete m_uploadFile;
+        m_uploadFile = nullptr;
+        m_isUploading = false;
+        // 服务器响应 UPLOAD_OK / UPLOAD_FAIL 由 onReadyRead 处理
+        return;
+    }
+
+    m_socket->write(chunk);
+    m_uploadBytesSent += chunk.size();
+    emit uploadProgress(m_uploadBytesSent, m_uploadFileSize);
+
+    // 让出事件循环，调度下一块
+    QTimer::singleShot(0, this, &NetworkManager::sendNextChunk);
+}
+
+bool NetworkManager::downloadFile(const QString& remotePath, const QString& localPath) {
     if (!isConnected()) {
         emit error("未连接到服务器");
         return false;
@@ -182,6 +238,10 @@ bool NetworkManager::downloadFile(const QString &remotePath, const QString &loca
     m_isDownloading = true;
     m_downloadPath = localPath;
     m_downloadBytesReceived = 0;
+
+    // 清理可能残留的旧下载文件对象
+    delete m_downloadFile;
+    m_downloadFile = nullptr;
 
     // 打开本地文件
     m_downloadFile = new QFile(localPath);
@@ -206,15 +266,14 @@ bool NetworkManager::downloadFile(const QString &remotePath, const QString &loca
 
     // 发送下载请求
     QByteArray request;
-    request.append("DOWNLOAD " + remotePath.toUtf8() + " " + QString::number(m_downloadBytesReceived).toUtf8() + "\n");
+    request.append("DOWNLOAD " + encodeField(remotePath).toUtf8() + " " + QString::number(m_downloadBytesReceived).toUtf8() + "\n");
     m_socket->write(request);
     m_socket->flush();
-    
+
     return true;
 }
 
-bool NetworkManager::listFiles(const QString &directory)
-{
+bool NetworkManager::listFiles(const QString& directory) {
     if (!isConnected()) {
         emit error("未连接到服务器");
         return false;
@@ -222,93 +281,87 @@ bool NetworkManager::listFiles(const QString &directory)
 
     // 构建列出文件请求
     QByteArray request;
-    request.append("LIST " + directory.toUtf8() + "\n");
+    request.append("LIST " + encodeField(directory).toUtf8() + "\n");
     m_socket->write(request);
     return m_socket->waitForBytesWritten();
 }
 
-void NetworkManager::onConnected()
-{
-    emit connected();
+void NetworkManager::onConnected() { emit connected(); }
+
+void NetworkManager::onDisconnected() { emit disconnected(); }
+
+void NetworkManager::onError(QAbstractSocket::SocketError error) {
+    Q_UNUSED(error);
+    emit NetworkManager::error(m_socket->errorString());
 }
 
-void NetworkManager::onDisconnected()
-{
-    emit disconnected();
-}
-
-void NetworkManager::onError(QAbstractSocket::SocketError error)
-{
-    //emit error(m_socket->errorString());
-}
-
-void NetworkManager::onReadyRead()
-{
+void NetworkManager::onReadyRead() {
     if (m_isDownloading && m_downloadFile) {
-            // 尝试读取指令头，使用 while 循环防止多条指令粘连
-            while (m_downloadFileSize == 0 && m_socket->canReadLine()) {
-                QByteArray rawLine = m_socket->readLine();
-                QString line = QString::fromUtf8(rawLine).trimmed();
+        // 尝试读取指令头，使用 while 循环防止多条指令粘连
+        while (m_downloadFileSize == 0 && m_socket->canReadLine()) {
+            QByteArray rawLine = m_socket->readLine();
+            QString line = QString::fromUtf8(rawLine).trimmed();
 
-                if (line.startsWith("DOWNLOAD_OK")) {
-                    m_downloadFileSize = line.mid(11).trimmed().toLongLong();
+            if (line.startsWith("DOWNLOAD_OK")) {
+                m_downloadFileSize = line.mid(11).trimmed().toLongLong();
 
-                    // 瞬间完成或空文件的情况
-                    if (m_downloadFileSize == 0 || m_downloadBytesReceived >= m_downloadFileSize) {
-                        m_downloadFile->flush();
-                        m_downloadFile->close();
-                        delete m_downloadFile;
-                        m_downloadFile = nullptr;
-                        m_isDownloading = false;
-                        emit downloadResult(true, "下载成功");
-                        break; // 跳出循环，让下方的 m_buffer 处理可能剩下的普通指令
-                    }
-                } else if (line.startsWith("DOWNLOAD_FAIL")) {
-                    m_downloadFile->close();
-                    delete m_downloadFile;
-                    m_downloadFile = nullptr;
-                    m_isDownloading = false;
-                    emit downloadResult(false, line.mid(13));
-                    return;
-                } else {
-                    // 如果服务器在发送文件前发来了其他普通指令，存入缓冲池，不能丢弃
-                    m_buffer.append(rawLine);
-                }
-            }
-
-            // 接收文件实体数据
-            if (m_isDownloading && m_downloadFileSize > 0 && m_socket->bytesAvailable() > 0) {
-                qint64 bytesToRead = m_downloadFileSize - m_downloadBytesReceived;
-                QByteArray data = m_socket->read(bytesToRead);
-                m_downloadFile->write(data);
-                m_downloadBytesReceived += data.size();
-
-                if (m_downloadBytesReceived >= m_downloadFileSize) {
+                // 瞬间完成或空文件的情况
+                if (m_downloadFileSize == 0 || m_downloadBytesReceived >= m_downloadFileSize) {
                     m_downloadFile->flush();
                     m_downloadFile->close();
                     delete m_downloadFile;
                     m_downloadFile = nullptr;
-
                     m_isDownloading = false;
-                    m_downloadFileSize = 0;
-                    m_downloadBytesReceived = 0;
-                    emit downloadResult(true, "下载成功"); // 明确发送成功信号
+                    emit downloadResult(true, "下载成功");
+                    break;  // 跳出循环，让下方的 m_buffer 处理可能剩下的普通指令
                 }
-            }
-
-            // 如果还在下载中，说明当前包读完了，直接返回等待下一个包
-            if (m_isDownloading) {
+            } else if (line.startsWith("DOWNLOAD_FAIL")) {
+                m_downloadFile->close();
+                delete m_downloadFile;
+                m_downloadFile = nullptr;
+                m_isDownloading = false;
+                emit downloadResult(false, line.mid(13));
                 return;
+            } else {
+                // 如果服务器在发送文件前发来了其他普通指令，存入缓冲池，不能丢弃
+                m_buffer.append(rawLine);
             }
         }
 
-        // 处理非下载状态下（或刚才被加入缓冲池）的普通指令
-        m_buffer.append(m_socket->readAll());
+        // 接收文件实体数据
+        if (m_isDownloading && m_downloadFileSize > 0 && m_socket->bytesAvailable() > 0) {
+            qint64 bytesToRead = m_downloadFileSize - m_downloadBytesReceived;
+            QByteArray data = m_socket->read(bytesToRead);
+            m_downloadFile->write(data);
+            m_downloadBytesReceived += data.size();
+            emit downloadProgress(m_downloadBytesReceived, m_downloadFileSize);
 
-        while (m_buffer.contains('\n')) {
-            int pos = m_buffer.indexOf('\n');
-            QByteArray line = m_buffer.left(pos);
-            m_buffer.remove(0, pos + 1);
+            if (m_downloadBytesReceived >= m_downloadFileSize) {
+                m_downloadFile->flush();
+                m_downloadFile->close();
+                delete m_downloadFile;
+                m_downloadFile = nullptr;
+
+                m_isDownloading = false;
+                m_downloadFileSize = 0;
+                m_downloadBytesReceived = 0;
+                emit downloadResult(true, "下载成功");  // 明确发送成功信号
+            }
+        }
+
+        // 如果还在下载中，说明当前包读完了，直接返回等待下一个包
+        if (m_isDownloading) {
+            return;
+        }
+    }
+
+    // 处理非下载状态下（或刚才被加入缓冲池）的普通指令
+    m_buffer.append(m_socket->readAll());
+
+    while (m_buffer.contains('\n')) {
+        int pos = m_buffer.indexOf('\n');
+        QByteArray line = m_buffer.left(pos);
+        m_buffer.remove(0, pos + 1);
 
         // 解析响应
         if (line.startsWith("LOGIN_OK")) {
@@ -323,6 +376,19 @@ void NetworkManager::onReadyRead()
             emit registerResult(false, message);
         } else if (line.startsWith("FILE_LIST")) {
             emit fileListReceived(line.mid(10));
+        } else if (line.startsWith("UPLOAD_RESUME")) {
+            // 服务器告知已有文件大小，从该偏移续传
+            if (m_isCheckingUpload) {
+                qint64 offset = line.mid(14).trimmed().toLongLong();
+                qDebug() << "UPLOAD_RESUME: offset =" << offset;
+                startUploadTransfer(offset);
+            }
+        } else if (line.startsWith("UPLOAD_NEW")) {
+            // 服务器告知无此文件，从头开始上传
+            if (m_isCheckingUpload) {
+                qDebug() << "UPLOAD_NEW: starting from offset 0";
+                startUploadTransfer(0);
+            }
         } else if (line.startsWith("UPLOAD_OK")) {
             emit uploadResult(true, "上传成功");
         } else if (line.startsWith("UPLOAD_FAIL")) {
@@ -338,6 +404,16 @@ void NetworkManager::onReadyRead()
         } else if (line.startsWith("DELETE_FAIL")) {
             QString message = QString::fromUtf8(line.mid(11));
             emit deleteResult(false, message);
+        } else if (line.startsWith("CHANGE_PASSWORD_OK")) {
+            emit changePasswordResult(true, "密码修改成功");
+        } else if (line.startsWith("CHANGE_PASSWORD_FAIL")) {
+            QString message = QString::fromUtf8(line.mid(20));
+            emit changePasswordResult(false, message);
+        } else if (line.startsWith("DELETE_USER_OK")) {
+            emit deleteUserResult(true, "账号已注销");
+        } else if (line.startsWith("DELETE_USER_FAIL")) {
+            QString message = QString::fromUtf8(line.mid(16));
+            emit deleteUserResult(false, message);
         }
     }
 }

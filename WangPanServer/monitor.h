@@ -4,12 +4,13 @@
 #include <QObject>
 #include <QTimer>
 
-class Monitor : public QObject
-{
+#include "windowsmonitor.h"
+
+class Monitor : public QObject {
     Q_OBJECT
 
-public:
-    static Monitor *instance();
+   public:
+    static Monitor* instance();
     ~Monitor();
 
     void start();
@@ -21,18 +22,19 @@ public:
     qint64 getNetworkIn();
     qint64 getNetworkOut();
     int getConnectionCount();
+    void setConnectionCount(int count);
 
-signals:
+   signals:
     void monitoringUpdate(float cpuUsage, float memoryUsage, float diskUsage, qint64 networkIn, qint64 networkOut, int connectionCount);
 
-private slots:
+   private slots:
     void onTimerTimeout();
 
-private:
-    Monitor(QObject *parent = nullptr);
-    static Monitor *m_instance;
+   private:
+    Monitor(QObject* parent = nullptr);
+    static Monitor* m_instance;
 
-    QTimer *m_timer;
+    QTimer* m_timer;
     float m_cpuUsage;
     float m_memoryUsage;
     float m_diskUsage;
@@ -41,4 +43,4 @@ private:
     int m_connectionCount;
 };
 
-#endif // MONITOR_H
+#endif  // MONITOR_H

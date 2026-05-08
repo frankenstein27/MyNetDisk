@@ -1,39 +1,50 @@
 #include "clienthandler.h"
-#include "usermanager.h"
-#include "databasemanager.h"
-#include "logmanager.h"
-#include <QHostAddress>
-#include "filemanager.h"
 
-ClientHandler::ClientHandler(QTcpSocket *socket, QObject *parent) : QObject(parent),
-    m_socket(socket), m_loggedIn(false)
-{
+#include <QHostAddress>
+#include <QUrl>
+
+#include "databasemanager.h"
+#include "filemanager.h"
+#include "logmanager.h"
+#include "usermanager.h"
+
+// 协议字段百分号解码
+static QString decodeField(const QString& field) { return QUrl::fromPercentEncoding(field.toUtf8()); }
+
+ClientHandler::ClientHandler(QTcpSocket* socket, QObject* parent) : QObject(parent), m_socket(socket), m_loggedIn(false), m_uploading(false), m_uploadExpectedSize(0), m_uploadOffset(0) {
     connect(m_socket, &QTcpSocket::readyRead, this, &ClientHandler::onReadyRead);
     connect(m_socket, &QTcpSocket::disconnected, this, &ClientHandler::onDisconnected);
 }
 
-ClientHandler::~ClientHandler()
-{
-    m_socket->deleteLater();
-}
+ClientHandler::~ClientHandler() { m_socket->deleteLater(); }
 
-void ClientHandler::onReadyRead()
-{
+void ClientHandler::onReadyRead() {
     // 读取所有可用数据
     QByteArray data = m_socket->readAll();
     m_buffer.append(data);
+
+    // 如果正在接收上传数据，所有数据均为文件内容，不解析命令
+    if (m_uploading) {
+        continueUpload();
+        return;
+    }
 
     // 处理所有完整的请求行
     while (m_buffer.contains('\n')) {
         int pos = m_buffer.indexOf('\n');
         QByteArray lineData = m_buffer.left(pos);
         m_buffer.remove(0, pos + 1);
-        
+
         QString line = QString::fromUtf8(lineData).trimmed();
         if (line.isEmpty()) continue;
 
         QStringList parts = line.split(' ');
         if (parts.isEmpty()) continue;
+
+        // 对所有协议字段进行百分号解码（还原空格等特殊字符）
+        for (QString& part : parts) {
+            part = decodeField(part);
+        }
 
         QString command = parts[0];
 
@@ -77,8 +88,8 @@ void ClientHandler::onReadyRead()
                 handleDownload(remotePath, offset);
             }
         } else if (command == "MKDIR") {
-            if (line.length() > 6) {
-                QString path = line.mid(6).trimmed();
+            if (parts.size() >= 2) {
+                QString path = parts[1];  // 已由 decodeField 解码
                 handleCreateDirectory(path);
             }
         } else if (command == "DELETE") {
@@ -111,16 +122,14 @@ void ClientHandler::onReadyRead()
     }
 }
 
-void ClientHandler::onDisconnected()
-{
+void ClientHandler::onDisconnected() {
     if (m_loggedIn) {
         LogManager::instance()->logUserAction(m_username, "logout", "user", m_username, "User logged out", m_socket->peerAddress().toString());
     }
     emit disconnected();
 }
 
-void ClientHandler::handleLogin(const QString &username, const QString &password)
-{
+void ClientHandler::handleLogin(const QString& username, const QString& password) {
     if (UserManager::instance()->loginUser(username, password)) {
         m_username = username;
         m_loggedIn = true;
@@ -132,8 +141,7 @@ void ClientHandler::handleLogin(const QString &username, const QString &password
     }
 }
 
-void ClientHandler::handleRegister(const QString &username, const QString &email, const QString &password, const QString &nickname)
-{
+void ClientHandler::handleRegister(const QString& username, const QString& email, const QString& password, const QString& nickname) {
     if (UserManager::instance()->registerUser(username, email, password, nickname)) {
         LogManager::instance()->logUserAction(username, "register", "user", username, "User registered", m_socket->peerAddress().toString());
         m_socket->write("REGISTER_OK\n");
@@ -142,8 +150,7 @@ void ClientHandler::handleRegister(const QString &username, const QString &email
     }
 }
 
-void ClientHandler::handleListFiles(const QString &directory)
-{
+void ClientHandler::handleListFiles(const QString& directory) {
     if (!m_loggedIn) {
         m_socket->write("LIST_FAIL Not logged in\n");
         return;
@@ -154,12 +161,9 @@ void ClientHandler::handleListFiles(const QString &directory)
     DatabaseManager::instance()->getFileList(m_username, directory, fileList);
 
     QString response = "FILE_LIST ";
-    for (const QMap<QString, QVariant> &file : fileList) {
-        response += file["name"].toString() + "|" + 
-                   QString::number(file["size"].toLongLong()) + "|" + 
-                   file["type"].toString() + "|" + 
-                   file["path"].toString() + "|" + 
-                   file["last_modified"].toString() + "\t";
+    for (const QMap<QString, QVariant>& file : fileList) {
+        response +=
+            file["name"].toString() + "|" + QString::number(file["size"].toLongLong()) + "|" + file["type"].toString() + "|" + file["path"].toString() + "|" + file["last_modified"].toString() + "\t";
     }
     response += "\n";  // 确保响应以换行符结尾
 
@@ -167,8 +171,7 @@ void ClientHandler::handleListFiles(const QString &directory)
     m_socket->flush();
 }
 
-void ClientHandler::handleUploadCheck(const QString &remotePath, const QString &fileName)
-{
+void ClientHandler::handleUploadCheck(const QString& remotePath, const QString& fileName) {
     if (!m_loggedIn) {
         m_socket->write("UPLOAD_CHECK_FAIL Not logged in\n");
         return;
@@ -183,94 +186,94 @@ void ClientHandler::handleUploadCheck(const QString &remotePath, const QString &
     }
 }
 
-void ClientHandler::handleUpload(const QString &remotePath, qint64 fileSize, const QString &fileName, qint64 offset)
-{
-    qDebug() << "=== handleUpload called ===";
-    qDebug() << "remotePath:" << remotePath;
-    qDebug() << "fileSize:" << fileSize;
-    qDebug() << "fileName:" << fileName;
-    qDebug() << "offset:" << offset;
+void ClientHandler::handleUpload(const QString& remotePath, qint64 fileSize, const QString& fileName, qint64 offset) {
+    qDebug() << "=== handleUpload (async) called ===";
+    qDebug() << "remotePath:" << remotePath << "fileSize:" << fileSize << "fileName:" << fileName << "offset:" << offset;
     qDebug() << "m_username:" << m_username;
-    
+
     if (!m_loggedIn) {
         m_socket->write("UPLOAD_FAIL Not logged in\n");
         return;
     }
 
-    // 接收文件数据
-    QByteArray fileData;
-    qint64 bytesReceived = 0;
-    qint64 expectedSize = fileSize - offset;
+    // 初始化异步上传状态
+    m_uploading = true;
+    m_uploadExpectedSize = fileSize - offset;
+    m_uploadRemotePath = remotePath;
+    m_uploadFileName = fileName;
+    m_uploadOffset = offset;
+    m_uploadData.clear();
 
-    // 添加调试信息
-    qDebug() << "handleUpload: received request for file" << fileName;
-    qDebug() << "File size:" << fileSize << "Offset:" << offset;
-    qDebug() << "Expected data size:" << expectedSize;
-    qDebug() << "Socket state:" << m_socket->state();
-    qDebug() << "Bytes available:" << m_socket->bytesAvailable();
+    qDebug() << "Expected data size:" << m_uploadExpectedSize << "Bytes in m_buffer:" << m_buffer.size();
 
-    // 改进的接收逻辑
-    while (bytesReceived < expectedSize) {
-        if (m_socket->bytesAvailable() > 0) {
-            QByteArray data = m_socket->readAll();
-            fileData.append(data);
-            bytesReceived += data.size();
-            qDebug() << "Received:" << bytesReceived << "/" << expectedSize;
-        } else {
-            // 等待数据，设置合理的超时时间
-            qDebug() << "Waiting for data...";
-            if (!m_socket->waitForReadyRead(10000)) {
-                qDebug() << "Upload timeout: received" << bytesReceived << "expected" << expectedSize;
-                m_socket->write("UPLOAD_FAIL Timeout\n");
-                return;
-            }
-        }
+    // 立即消费 m_buffer 中已有的数据并继续接收
+    continueUpload();
+}
+
+void ClientHandler::continueUpload() {
+    if (!m_uploading) return;
+
+    qint64 remaining = m_uploadExpectedSize - m_uploadData.size();
+
+    // 从 m_buffer 中获取尽可能多的数据
+    if (!m_buffer.isEmpty() && remaining > 0) {
+        qint64 fromBuffer = qMin((qint64)m_buffer.size(), remaining);
+        m_uploadData.append(m_buffer.left(fromBuffer));
+        m_buffer.remove(0, fromBuffer);
+        remaining -= fromBuffer;
+        qDebug() << "Consumed" << fromBuffer << "bytes from buffer, total:" << m_uploadData.size() << "/" << m_uploadExpectedSize;
     }
 
-    qDebug() << "Upload complete: received" << bytesReceived << "bytes";
-
-    // 验证接收的字节数
-    if (bytesReceived != expectedSize) {
-        qDebug() << "Upload failed: received" << bytesReceived << "but expected" << expectedSize;
-        m_socket->write("UPLOAD_FAIL Invalid data size\n");
+    // 如果还没有收完，等待下一次 onReadyRead
+    if (m_uploadData.size() < m_uploadExpectedSize) {
+        qDebug() << "Waiting for more data (currently" << m_uploadData.size() << "of" << m_uploadExpectedSize << ")";
         return;
     }
 
-    // 保存文件，使用完整路径
-    qDebug() << "Saving file:" << remotePath << "with size:" << fileData.size();
-    
-    if (offset > 0) {
-        // 续传模式，先读取现有文件
-        qDebug() << "Resuming upload: offset" << offset;
-        QByteArray existingData = FileManager::instance()->readFile(m_username, remotePath);
-        qDebug() << "Existing file size:" << existingData.size();
-        
-        if (!existingData.isEmpty()) {
-            // 确保现有数据大小与偏移量一致
-            if (existingData.size() == offset) {
-                existingData.append(fileData);
-                fileData = existingData;
-                qDebug() << "Combined file size:" << fileData.size();
-            } else {
-                qDebug() << "Existing file size doesn't match offset, starting from scratch";
-            }
+    // 全部数据已收到，执行保存逻辑
+    qDebug() << "Upload data complete:" << m_uploadData.size() << "bytes";
+    m_uploading = false;
+
+    QByteArray fileData = m_uploadData;
+
+    // 处理断点续传：拼接已有文件
+    if (m_uploadOffset > 0) {
+        qDebug() << "Resuming upload: offset" << m_uploadOffset;
+        QByteArray existingData = FileManager::instance()->readFile(m_username, m_uploadRemotePath);
+        if (existingData.size() == m_uploadOffset) {
+            fileData.prepend(existingData);
+            qDebug() << "Combined file size:" << fileData.size();
+        } else {
+            qDebug() << "Existing file size mismatch, using new data only";
         }
     }
 
-    if (FileManager::instance()->saveFile(m_username, remotePath, fileData)) {
+    // 保存文件并响应客户端
+    if (FileManager::instance()->saveFile(m_username, m_uploadRemotePath, fileData)) {
         m_socket->write("UPLOAD_OK\n");
         m_socket->flush();
         qDebug() << "UPLOAD_OK sent";
-        LogManager::instance()->logUserAction(m_username, "upload", "file", fileName, "File uploaded", m_socket->peerAddress().toString());
+        LogManager::instance()->logUserAction(m_username, "upload", "file", m_uploadFileName, "File uploaded", m_socket->peerAddress().toString());
+
+        // 同步写入数据库 files 表
+        int rootDirId = DatabaseManager::instance()->getRootDirectoryId(m_username);
+        if (rootDirId >= 0) {
+            QString ext = m_uploadFileName.contains('.') ? m_uploadFileName.section('.', -1) : "";
+            DatabaseManager::instance()->addFile(m_username, m_uploadFileName, m_uploadRemotePath, fileData.size(), ext, rootDirId);
+
+            // 写入数据库操作日志
+            DatabaseManager::instance()->logAction(m_username, "upload", "file", m_uploadFileName, "上传文件: " + m_uploadRemotePath, m_socket->peerAddress().toString());
+        }
     } else {
         m_socket->write("UPLOAD_FAIL Save failed\n");
         m_socket->flush();
         qDebug() << "UPLOAD_FAIL sent";
     }
+
+    m_uploadData.clear();
 }
 
-void ClientHandler::handleDownload(const QString &remotePath, qint64 offset)
-{
+void ClientHandler::handleDownload(const QString& remotePath, qint64 offset) {
     if (!m_loggedIn) {
         m_socket->write("DOWNLOAD_FAIL Not logged in\n");
         return;
@@ -292,25 +295,18 @@ void ClientHandler::handleDownload(const QString &remotePath, qint64 offset)
     // 截取文件数据
     QByteArray partialData = fileData.mid(offset);
 
-    // 发送文件大小
+    // 发送文件大小和文件数据（异步写入，不阻塞事件循环）
     QString response = "DOWNLOAD_OK " + QString::number(fileData.size()) + "\n";
     m_socket->write(response.toUtf8());
-    if (!m_socket->waitForBytesWritten()) {
-        return;
-    }
-
-    // 发送文件数据
     m_socket->write(partialData);
-    if (!m_socket->waitForBytesWritten()) {
-        return;
-    }
+    m_socket->flush();
 
     QString fileName = remotePath.split('/').last();
     LogManager::instance()->logUserAction(m_username, "download", "file", fileName, "File downloaded", m_socket->peerAddress().toString());
+    DatabaseManager::instance()->logAction(m_username, "download", "file", fileName, "下载文件: " + remotePath, m_socket->peerAddress().toString());
 }
 
-void ClientHandler::handleCreateDirectory(const QString &path)
-{
+void ClientHandler::handleCreateDirectory(const QString& path) {
     if (!m_loggedIn) {
         m_socket->write("MKDIR_FAIL Not logged in\n");
         return;
@@ -321,13 +317,13 @@ void ClientHandler::handleCreateDirectory(const QString &path)
         m_socket->write("MKDIR_OK\n");
         QString directoryName = path.split('/').last();
         LogManager::instance()->logUserAction(m_username, "mkdir", "directory", directoryName, "Directory created", m_socket->peerAddress().toString());
+        DatabaseManager::instance()->logAction(m_username, "mkdir", "directory", directoryName, "创建目录: " + path, m_socket->peerAddress().toString());
     } else {
         m_socket->write("MKDIR_FAIL Create failed\n");
     }
 }
 
-void ClientHandler::handleDelete(const QString &path)
-{
+void ClientHandler::handleDelete(const QString& path) {
     if (!m_loggedIn) {
         m_socket->write("DELETE_FAIL Not logged in\n");
         return;
@@ -343,8 +339,7 @@ void ClientHandler::handleDelete(const QString &path)
     }
 }
 
-void ClientHandler::handleRename(const QString &oldPath, const QString &newPath)
-{
+void ClientHandler::handleRename(const QString& oldPath, const QString& newPath) {
     if (!m_loggedIn) {
         m_socket->write("RENAME_FAIL Not logged in\n");
         return;
@@ -361,8 +356,7 @@ void ClientHandler::handleRename(const QString &oldPath, const QString &newPath)
     }
 }
 
-void ClientHandler::handleChangePassword(const QString &oldPassword, const QString &newPassword, const QString &confirmPassword)
-{
+void ClientHandler::handleChangePassword(const QString& oldPassword, const QString& newPassword, const QString& confirmPassword) {
     if (!m_loggedIn) {
         m_socket->write("CHANGE_PASSWORD_FAIL Not logged in\n");
         return;
@@ -383,8 +377,7 @@ void ClientHandler::handleChangePassword(const QString &oldPassword, const QStri
     }
 }
 
-void ClientHandler::handleUpdateUserInfo(const QString &email, const QString &nickname)
-{
+void ClientHandler::handleUpdateUserInfo(const QString& email, const QString& nickname) {
     if (!m_loggedIn) {
         m_socket->write("UPDATE_USER_INFO_FAIL Not logged in\n");
         return;
@@ -399,8 +392,7 @@ void ClientHandler::handleUpdateUserInfo(const QString &email, const QString &ni
     }
 }
 
-void ClientHandler::handleDeleteUser()
-{
+void ClientHandler::handleDeleteUser() {
     if (!m_loggedIn) {
         m_socket->write("DELETE_USER_FAIL Not logged in\n");
         return;

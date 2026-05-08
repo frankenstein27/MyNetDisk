@@ -2,6 +2,7 @@
 
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QVariant>
 
 #include "databasemanager.h"
 

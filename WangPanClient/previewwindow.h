@@ -1,9 +1,9 @@
 #ifndef PREVIEWWINDOW_H
 #define PREVIEWWINDOW_H
 
+#include <QLabel>
 #include <QMainWindow>
 #include <QPixmap>
-#include <QLabel>
 
 namespace Ui {
 class PreviewWindow;
@@ -19,7 +19,7 @@ class PreviewWindow : public QMainWindow {
     void setFile(const QString& filePath, const QString& fileName);
 
    protected:
-    void wheelEvent(QWheelEvent* event) override;
+    bool eventFilter(QObject* obj, QEvent* event) override;
 
    private slots:
     void on_closeButton_clicked();

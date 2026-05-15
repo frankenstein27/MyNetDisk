@@ -11,6 +11,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QTextStream>
+#include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWheelEvent>
@@ -39,9 +40,18 @@ void PreviewWindow::setFile(const QString& filePath, const QString& fileName) {
         previewPdfFile();
         ui->previewTabWidget->setCurrentWidget(ui->pdfTab);
     } else {
-        // 不支持的文件类型
-        ui->textEdit->setText("不支持的文件类型");
+        // 不支持预览的文件类型，使用系统默认应用打开
         ui->previewTabWidget->setCurrentWidget(ui->textTab);
+
+        // 清除旧的文本编辑内容
+        ui->textEdit->clear();
+
+        // 显示提示信息
+        QString extUpper = extension.toUpper();
+        ui->textEdit->setText("文件类型: " + extUpper + "\n\n该文件类型不支持内置预览。\n\n正在使用系统默认应用打开...");
+
+        // 使用系统默认应用打开文件
+        QDesktopServices::openUrl(QUrl::fromLocalFile(m_filePath));
     }
 }
 
@@ -89,13 +99,22 @@ void PreviewWindow::previewImageFile() {
 
     ui->imageTab->layout()->addWidget(scrollArea);
 
-    // 初次显示：缩放到适合窗口大小
-    QSize viewSize = scrollArea->viewport()->size();
-    if (viewSize.isEmpty()) viewSize = QSize(780, 480);
-    m_imageZoom = qMin(static_cast<double>(viewSize.width()) / m_originalPixmap.width(), static_cast<double>(viewSize.height()) / m_originalPixmap.height());
-    if (m_imageZoom > 1.0) m_imageZoom = 1.0;  // 不要放大超过原始尺寸
+    // 安装事件过滤器以截获 scrollArea（含 viewport）上的滚轮事件
+    scrollArea->viewport()->installEventFilter(this);
+    scrollArea->installEventFilter(this);
+
     m_imageViewLabel = label;
-    updateImageDisplay();
+
+    // 让布局先完成，然后用 QTimer::singleShot 计算合适缩放
+    QTimer::singleShot(0, this, [this, scrollArea]() {
+        if (!m_imageViewLabel || m_originalPixmap.isNull()) return;
+        QSize viewSize = scrollArea->viewport()->size();
+        if (viewSize.isEmpty()) viewSize = QSize(780, 480);
+        m_imageZoom = qMin(static_cast<double>(viewSize.width()) / m_originalPixmap.width(), static_cast<double>(viewSize.height()) / m_originalPixmap.height());
+        if (m_imageZoom < 0.05) m_imageZoom = 0.05;
+        if (m_imageZoom > 1.0) m_imageZoom = 1.0;
+        updateImageDisplay();
+    });
 }
 
 void PreviewWindow::updateImageDisplay() {
@@ -105,19 +124,19 @@ void PreviewWindow::updateImageDisplay() {
     m_imageViewLabel->resize(newSize);
 }
 
-void PreviewWindow::wheelEvent(QWheelEvent* event) {
-    // 仅当在图片标签页且图片已加载时处理滚轮缩放
-    if (ui->previewTabWidget->currentWidget() == ui->imageTab && m_imageViewLabel) {
-        double factor = (event->angleDelta().y() > 0) ? 1.15 : (1.0 / 1.15);
+bool PreviewWindow::eventFilter(QObject* obj, QEvent* event) {
+    // 截获 QScrollArea（及其内部 viewport）上的滚轮事件，用于图片缩放
+    if (event->type() == QEvent::Wheel && ui->previewTabWidget->currentWidget() == ui->imageTab && m_imageViewLabel) {
+        QWheelEvent* wheelEvent = static_cast<QWheelEvent*>(event);
+        double factor = (wheelEvent->angleDelta().y() > 0) ? 1.15 : (1.0 / 1.15);
         double newZoom = m_imageZoom * factor;
         if (newZoom >= 0.05 && newZoom <= 10.0) {
             m_imageZoom = newZoom;
             updateImageDisplay();
         }
-        event->accept();
-        return;
+        return true;  // 消费事件，阻止 QScrollArea 将其用于滚动
     }
-    QMainWindow::wheelEvent(event);
+    return QMainWindow::eventFilter(obj, event);
 }
 
 void PreviewWindow::previewPdfFile() {

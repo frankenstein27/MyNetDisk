@@ -31,3 +31,10 @@ WangPanClientExe/
 
 WangPanClientExe/
 
+*.iss
+
+*.exe
+
+WangPanClientRelease/
+
+WangPanServerRelease/

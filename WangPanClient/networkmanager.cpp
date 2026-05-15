@@ -1,6 +1,7 @@
 #include "networkmanager.h"
 
 #include <QByteArray>
+#include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDebug>
 #include <QFile>
@@ -17,8 +18,13 @@ NetworkManager* NetworkManager::m_instance = nullptr;
 
 NetworkManager::NetworkManager(QObject* parent) : QObject(parent) {
     m_socket = new QTcpSocket(this);
-    m_serverAddress = "127.0.0.1";
-    m_serverPort = 8888;
+
+    // 从配置文件读取服务器地址和端口（配置文件与可执行文件同目录）
+    QString configPath = QCoreApplication::applicationDirPath() + "/config.ini";
+    QSettings settings(configPath, QSettings::IniFormat, this);
+    m_serverAddress = settings.value("Server/address", "127.0.0.1").toString();
+    m_serverPort = settings.value("Server/port", 8888).toInt();
+
     m_isDownloading = false;
     m_isUploading = false;
     m_downloadFile = nullptr;
@@ -63,7 +69,7 @@ void NetworkManager::login(const QString& username, const QString& password) {
         return;
     }
 
-    // 构建登录请求
+    // 构建登录请求（密码做 SHA-256 哈希，避免明文传输）
     QByteArray request;
     request.append("LOGIN " + encodeField(username).toUtf8() + " " + hashPassword(password).toUtf8() + "\n");
     m_socket->write(request);
@@ -76,7 +82,7 @@ void NetworkManager::registerUser(const QString& username, const QString& email,
         return;
     }
 
-    // 构建注册请求
+    // 构建注册请求（密码做 SHA-256 哈希，避免明文传输）
     QByteArray request;
     request.append("REGISTER " + encodeField(username).toUtf8() + " " + encodeField(email).toUtf8() + " " + hashPassword(password).toUtf8() + " " + encodeField(nickname).toUtf8() + "\n");
     m_socket->write(request);
@@ -89,7 +95,8 @@ void NetworkManager::changePassword(const QString& oldPassword, const QString& n
         return;
     }
     QByteArray request;
-    request.append("CHANGE_PASSWORD " + encodeField(oldPassword).toUtf8() + " " + encodeField(newPassword).toUtf8() + " " + encodeField(confirmPassword).toUtf8() + "\n");
+    request.append("CHANGE_PASSWORD " + encodeField(hashPassword(oldPassword)).toUtf8() + " " + encodeField(hashPassword(newPassword)).toUtf8() + " " +
+                   encodeField(hashPassword(confirmPassword)).toUtf8() + "\n");
     m_socket->write(request);
     m_socket->flush();
 }

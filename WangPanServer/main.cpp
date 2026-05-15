@@ -1,12 +1,17 @@
 #include <QCoreApplication>
-#include "server.h"
-#include "monitor.h"
+#include <QSettings>
+
 #include "databasemanager.h"
 #include "filemanager.h"
+#include "monitor.h"
+#include "server.h"
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char* argv[]) {
     QCoreApplication a(argc, argv);
+
+    // 从配置文件读取端口号（配置文件与可执行文件同目录）
+    QString configPath = QCoreApplication::applicationDirPath() + "/config.ini";
+    QSettings settings(configPath, QSettings::IniFormat);
 
     // 初始化数据库
     DatabaseManager::instance()->connect();
@@ -19,7 +24,8 @@ int main(int argc, char *argv[])
 
     // 创建服务器实例
     Server server;
-    server.start(8888);
+    int port = settings.value("Server/port", 8888).toInt();
+    server.start(port);
 
     return a.exec();
 }

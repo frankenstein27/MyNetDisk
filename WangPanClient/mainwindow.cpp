@@ -177,6 +177,9 @@ MainWindow::~MainWindow() { delete ui; }
 void MainWindow::setUsername(const QString& username) {
     currentUsername = username;
     ui->userInfoLabel->setText("欢迎，" + username);
+
+    // 登录成功后自动刷新根目录文件列表
+    NetworkManager::instance()->listFiles("/");
 }
 
 void MainWindow::updateDirectoryTree() {

@@ -293,6 +293,70 @@ bool NetworkManager::listFiles(const QString& directory) {
     return m_socket->waitForBytesWritten();
 }
 
+void NetworkManager::copyFile(const QString& sourcePath, const QString& targetPath) {
+    if (!isConnected()) {
+        emit error("未连接到服务器");
+        return;
+    }
+    QByteArray request;
+    request.append("COPY " + encodeField(sourcePath).toUtf8() + " " + encodeField(targetPath).toUtf8() + "\n");
+    m_socket->write(request);
+    m_socket->flush();
+}
+
+void NetworkManager::moveFile(const QString& sourcePath, const QString& targetPath) {
+    if (!isConnected()) {
+        emit error("未连接到服务器");
+        return;
+    }
+    QByteArray request;
+    request.append("MOVE " + encodeField(sourcePath).toUtf8() + " " + encodeField(targetPath).toUtf8() + "\n");
+    m_socket->write(request);
+    m_socket->flush();
+}
+
+void NetworkManager::getUserInfo() {
+    if (!isConnected()) {
+        emit error("未连接到服务器");
+        return;
+    }
+    m_socket->write("GET_USER_INFO\n");
+    m_socket->flush();
+}
+
+void NetworkManager::updateNickname(const QString& nickname) {
+    if (!isConnected()) {
+        emit error("未连接到服务器");
+        return;
+    }
+    QByteArray request;
+    request.append("UPDATE_NICKNAME " + encodeField(nickname).toUtf8() + "\n");
+    m_socket->write(request);
+    m_socket->flush();
+}
+
+void NetworkManager::updateEmail(const QString& email) {
+    if (!isConnected()) {
+        emit error("未连接到服务器");
+        return;
+    }
+    QByteArray request;
+    request.append("UPDATE_EMAIL " + encodeField(email).toUtf8() + "\n");
+    m_socket->write(request);
+    m_socket->flush();
+}
+
+void NetworkManager::updateAvatar(const QByteArray& imageData) {
+    if (!isConnected()) {
+        emit error("未连接到服务器");
+        return;
+    }
+    QByteArray request;
+    request.append("UPDATE_AVATAR " + imageData.toBase64() + "\n");
+    m_socket->write(request);
+    m_socket->flush();
+}
+
 void NetworkManager::onConnected() { emit connected(); }
 
 void NetworkManager::onDisconnected() { emit disconnected(); }
@@ -421,6 +485,33 @@ void NetworkManager::onReadyRead() {
         } else if (line.startsWith("DELETE_USER_FAIL")) {
             QString message = QString::fromUtf8(line.mid(16));
             emit deleteUserResult(false, message);
+        } else if (line.startsWith("COPY_OK")) {
+            emit copyResult(true, "复制成功");
+        } else if (line.startsWith("COPY_FAIL")) {
+            QString message = QString::fromUtf8(line.mid(9));
+            emit copyResult(false, message);
+        } else if (line.startsWith("MOVE_OK")) {
+            emit moveResult(true, "移动成功");
+        } else if (line.startsWith("MOVE_FAIL")) {
+            QString message = QString::fromUtf8(line.mid(9));
+            emit moveResult(false, message);
+        } else if (line.startsWith("USER_INFO")) {
+            QStringList parts = QString::fromUtf8(line.mid(10)).split(' ');
+            if (parts.size() >= 5) {
+                emit userInfoReceived(parts[0], parts[1], parts[2].toLongLong(), parts[3].toLongLong(), parts[4]);
+            }
+        } else if (line.startsWith("UPDATE_NICKNAME_OK")) {
+            emit updateNicknameResult(true, "昵称修改成功");
+        } else if (line.startsWith("UPDATE_NICKNAME_FAIL")) {
+            emit updateNicknameResult(false, QString::fromUtf8(line.mid(20)));
+        } else if (line.startsWith("UPDATE_EMAIL_OK")) {
+            emit updateEmailResult(true, "邮箱修改成功");
+        } else if (line.startsWith("UPDATE_EMAIL_FAIL")) {
+            emit updateEmailResult(false, QString::fromUtf8(line.mid(17)));
+        } else if (line.startsWith("UPDATE_AVATAR_OK")) {
+            emit updateAvatarResult(true, "头像修改成功");
+        } else if (line.startsWith("UPDATE_AVATAR_FAIL")) {
+            emit updateAvatarResult(false, QString::fromUtf8(line.mid(18)));
         }
     }
 }

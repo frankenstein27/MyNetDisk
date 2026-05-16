@@ -94,7 +94,7 @@ bool FileManager::renameFile(const QString& oldPath, const QString& newPath) {
 }
 
 void FileManager::handleUploadResult(bool success, const QString& message) {
-    // 转发上传结果信号
+    // 转发上传结果信号，由 MainWindow 负责刷新文件列表
     emit uploadResult(success, message);
 }
 

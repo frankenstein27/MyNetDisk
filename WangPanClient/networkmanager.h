@@ -30,6 +30,12 @@ class NetworkManager : public QObject {
     bool uploadFile(const QString& localPath, const QString& remotePath);
     bool downloadFile(const QString& remotePath, const QString& localPath);
     bool listFiles(const QString& directory);
+    void copyFile(const QString& sourcePath, const QString& targetPath);
+    void moveFile(const QString& sourcePath, const QString& targetPath);
+    void getUserInfo();
+    void updateNickname(const QString& nickname);
+    void updateEmail(const QString& email);
+    void updateAvatar(const QByteArray& imageData);
 
    signals:
     void connected();
@@ -43,6 +49,12 @@ class NetworkManager : public QObject {
     void deleteResult(bool success, const QString& message);
     void changePasswordResult(bool success, const QString& message);
     void deleteUserResult(bool success, const QString& message);
+    void copyResult(bool success, const QString& message);
+    void moveResult(bool success, const QString& message);
+    void userInfoReceived(const QString& nickname, const QString& email, qint64 quota, qint64 usedSpace, const QString& avatar);
+    void updateNicknameResult(bool success, const QString& message);
+    void updateEmailResult(bool success, const QString& message);
+    void updateAvatarResult(bool success, const QString& message);
     void uploadProgress(qint64 bytesSent, qint64 bytesTotal);
     void downloadProgress(qint64 bytesReceived, qint64 bytesTotal);
 

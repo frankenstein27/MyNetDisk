@@ -25,7 +25,9 @@ class DatabaseManager : public QObject {
     bool updateLastLogin(const QString& username);
     bool updatePassword(const QString& username, const QString& passwordHash, const QString& salt);
     bool updateUserInfo(const QString& username, const QString& email, const QString& nickname);
+    bool updateUserAvatar(const QString& username, const QString& avatarPath);
     bool deleteUser(const QString& username);
+    void updateUsedSpace(const QString& username);
 
     // 文件相关操作
     bool addFile(const QString& username, const QString& filename, const QString& path, qint64 size, const QString& type, int directoryId);

@@ -230,16 +230,14 @@
     <addaction name="actionCut"/>
     <addaction name="actionPaste"/>
    </widget>
-   <widget class="QMenu" name="menuView">
-    <property name="title">
-     <string>视图</string>
-    </property>
-    <addaction name="actionRefresh"/>
-   </widget>
    <widget class="QMenu" name="menuAccount">
     <property name="title">
      <string>账户</string>
     </property>
+    <addaction name="actionUpdateAvatar"/>
+    <addaction name="actionUpdateNickname"/>
+    <addaction name="actionUpdateEmail"/>
+    <addaction name="separator"/>
     <addaction name="actionChangePassword"/>
     <addaction name="actionDeleteAccount"/>
    </widget>
@@ -251,7 +249,6 @@
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menuEdit"/>
-   <addaction name="menuView"/>
    <addaction name="menuAccount"/>
    <addaction name="menuHelp"/>
   </widget>
@@ -311,11 +308,6 @@
     <string>粘贴</string>
    </property>
   </action>
-  <action name="actionRefresh">
-   <property name="text">
-    <string>刷新</string>
-   </property>
-  </action>
   <action name="actionClearPreview">
    <property name="text">
     <string>清理已下载的预览文件</string>
@@ -324,6 +316,21 @@
   <action name="actionAbout">
    <property name="text">
     <string>关于</string>
+   </property>
+  </action>
+  <action name="actionUpdateAvatar">
+   <property name="text">
+    <string>修改头像</string>
+   </property>
+  </action>
+  <action name="actionUpdateNickname">
+   <property name="text">
+    <string>修改昵称</string>
+   </property>
+  </action>
+  <action name="actionUpdateEmail">
+   <property name="text">
+    <string>修改邮箱</string>
    </property>
   </action>
  </widget>

@@ -5,9 +5,15 @@
 #include <QDialogButtonBox>
 #include <QFileIconProvider>
 #include <QFormLayout>
+#include <QImage>
 #include <QInputDialog>
+#include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPixmap>
+#include <QSet>
+#include <QVBoxLayout>
 #include <QtGlobal>  // 确保 QT_VERSION 宏可用
 
 #include "filemanager.h"
@@ -20,8 +26,50 @@
 #include <QRegExp>
 #endif
 
+// 客户端侧危险后缀黑名单（与后端保持一致）
+static const QSet<QString> s_forbiddenExtensions = {"sh", "exe", "bat", "cmd", "msi", "apk", "dll", "scr", "com", "pif", "vbs", "ps1", "jar", "app", "run", "deb", "rpm"};
+
+bool MainWindow::isFileExtensionForbidden(const QString& filename) {
+    int dotPos = filename.lastIndexOf('.');
+    if (dotPos < 0) return false;
+    QString ext = filename.mid(dotPos + 1).toLower();
+    return s_forbiddenExtensions.contains(ext);
+}
+
+const qint64 MainWindow::MAX_UPLOAD_SIZE = 512LL * 1024 * 1024;  // 512MB
+
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWindow), currentDirectory("/") {
     ui->setupUi(this);
+
+    // ===== 初始化指针（解决野指针段错误） =====
+    // 复用 UI 中已有的 userInfoLabel 作为昵称标签
+    m_nicknameLabel = ui->userInfoLabel;
+    m_nicknameLabel->setText("加载中...");
+
+    // 头像标签：插入到顶部布局最前面
+    m_avatarLabel = new QLabel(ui->topWidget);
+    m_avatarLabel->setFixedSize(36, 36);
+    m_avatarLabel->setScaledContents(true);
+    m_avatarLabel->setStyleSheet("border-radius: 18px; border: 2px solid #ddd;");
+    QPixmap defaultAvatar(36, 36);
+    defaultAvatar.fill(QColor(200, 200, 200));
+    {
+        QPainter painter(&defaultAvatar);
+        painter.setBrush(QColor(150, 150, 150));
+        painter.drawEllipse(4, 4, 28, 28);
+    }
+    m_avatarLabel->setPixmap(defaultAvatar);
+
+    // 存储空间标签
+    m_storageLabel = new QLabel("存储: -- / --", ui->topWidget);
+    m_storageLabel->setStyleSheet("font-size: 12px; color: #666;");
+
+    // 将头像和存储标签插入布局
+    QHBoxLayout* topLayout = qobject_cast<QHBoxLayout*>(ui->topWidget->layout());
+    if (topLayout) {
+        topLayout->insertWidget(0, m_avatarLabel);
+        topLayout->insertWidget(2, m_storageLabel);
+    }
 
     // 初始化目录树
     QTreeWidgetItem* rootItem = new QTreeWidgetItem(ui->directoryTree);
@@ -176,11 +224,50 @@ MainWindow::~MainWindow() { delete ui; }
 
 void MainWindow::setUsername(const QString& username) {
     currentUsername = username;
-    ui->userInfoLabel->setText("欢迎，" + username);
+    m_nicknameLabel->setText(username);  // 临时显示，refreshUserInfo 后会更新为昵称
 
-    // 登录成功后自动刷新根目录文件列表
+    // 登录成功后获取用户信息并刷新文件列表
+    refreshUserInfo();
     NetworkManager::instance()->listFiles("/");
 }
+
+void MainWindow::updateUserDisplay() {
+    m_nicknameLabel->setText(m_currentUser.nickname().isEmpty() ? currentUsername : m_currentUser.nickname());
+
+    // 加载头像
+    QString avatarPath = m_currentUser.avatar();
+    if (!avatarPath.isEmpty() && QFile::exists(avatarPath)) {
+        QPixmap pix(avatarPath);
+        if (!pix.isNull()) {
+            m_avatarLabel->setPixmap(pix.scaled(36, 36, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            return;
+        }
+    }
+    // 默认头像
+    QPixmap defaultAvatar(36, 36);
+    defaultAvatar.fill(QColor(200, 200, 200));
+    QPainter painter(&defaultAvatar);
+    painter.setBrush(QColor(150, 150, 150));
+    painter.drawEllipse(4, 4, 28, 28);
+    painter.end();
+    m_avatarLabel->setPixmap(defaultAvatar);
+}
+
+void MainWindow::updateStorageDisplay() {
+    qint64 used = m_currentUser.usedSpace();
+    qint64 total = m_currentUser.quota();
+
+    auto formatSize = [](qint64 bytes) -> QString {
+        if (bytes >= 1024 * 1024 * 1024) return QString::number(bytes / (1024.0 * 1024 * 1024), 'f', 2) + " GB";
+        if (bytes >= 1024 * 1024) return QString::number(bytes / (1024.0 * 1024), 'f', 1) + " MB";
+        if (bytes >= 1024) return QString::number(bytes / 1024.0, 'f', 1) + " KB";
+        return QString::number(bytes) + " B";
+    };
+
+    m_storageLabel->setText("存储: " + formatSize(used) + " / " + formatSize(total));
+}
+
+void MainWindow::refreshUserInfo() { NetworkManager::instance()->getUserInfo(); }
 
 void MainWindow::updateDirectoryTree() {
     // 这里可以实现目录树的更新逻辑
@@ -198,7 +285,6 @@ void MainWindow::on_actionNewDirectory_triggered() {
     bool ok;
     QString dirName = QInputDialog::getText(this, "新建目录", "请输入目录名称:", QLineEdit::Normal, "", &ok);
     if (ok && !dirName.isEmpty()) {
-        // 校验系统不允许的文件名特殊字符
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         QRegularExpression rx("[\\\\/:*?\"<>|]");
 #else
@@ -210,6 +296,16 @@ void MainWindow::on_actionNewDirectory_triggered() {
         }
 
         QString path = buildPath(dirName);
+
+        // 检查同名冲突
+        QString fullPath = "./files/" + currentUsername + "/" + (path.startsWith("/") ? path.mid(1) : path);
+        if (QDir(fullPath).exists()) {
+            QMessageBox::StandardButton reply = QMessageBox::question(this, "同名冲突", QString("目录 \"%1\" 已存在，是否覆盖？").arg(dirName), QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (reply != QMessageBox::Yes) {
+                ui->statusLabel->setText("创建目录已取消");
+                return;
+            }
+        }
 
         if (FileManager::instance()->createDirectory(path)) {
             ui->statusLabel->setText("目录 " + dirName + " 创建请求已发送");
@@ -223,8 +319,32 @@ void MainWindow::on_actionNewDirectory_triggered() {
 void MainWindow::on_actionUploadFile_triggered() {
     QString fileName = QFileDialog::getOpenFileName(this, "选择文件", QDir::homePath());
     if (!fileName.isEmpty()) {
+        QFileInfo fi(fileName);
+        // 客户端安全校验：后缀名黑名单
+        if (isFileExtensionForbidden(fi.fileName())) {
+            QMessageBox::warning(this, "禁止上传", "不允许上传此类型的文件（" + fi.suffix() + "），可能为可执行文件或高风险文件。");
+            return;
+        }
+        // 客户端安全校验：文件大小限制
+        if (fi.size() > MAX_UPLOAD_SIZE) {
+            QMessageBox::warning(this, "文件过大", "单个文件不能超过 512MB。");
+            return;
+        }
+
+        // 同名冲突检测
+        QString remotePath = buildPath(fi.fileName());
+        QString fullTarget = "./files/" + currentUsername + "/" + (remotePath.startsWith("/") ? remotePath.mid(1) : remotePath);
+        if (QFileInfo::exists(fullTarget)) {
+            QMessageBox::StandardButton reply =
+                QMessageBox::question(this, "同名冲突", QString("文件 \"%1\" 已存在，是否覆盖？").arg(fi.fileName()), QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (reply != QMessageBox::Yes) {
+                ui->statusLabel->setText("上传已取消");
+                return;
+            }
+        }
+
         ui->statusLabel->setText("正在上传文件...");
-        FileManager::instance()->uploadFile(fileName, buildPath(QFileInfo(fileName).fileName()));
+        FileManager::instance()->uploadFile(fileName, remotePath);
     }
 }
 
@@ -283,8 +403,30 @@ void MainWindow::on_uploadButton_clicked() {
     // 实现文件上传功能
     QString fileName = QFileDialog::getOpenFileName(this, "选择文件", QDir::homePath());
     if (!fileName.isEmpty()) {
+        QFileInfo fi(fileName);
+        if (isFileExtensionForbidden(fi.fileName())) {
+            QMessageBox::warning(this, "禁止上传", "不允许上传此类型的文件（" + fi.suffix() + "），可能为可执行文件或高风险文件。");
+            return;
+        }
+        if (fi.size() > MAX_UPLOAD_SIZE) {
+            QMessageBox::warning(this, "文件过大", "单个文件不能超过 512MB。");
+            return;
+        }
+
+        // 同名冲突检测
+        QString remotePath = buildPath(fi.fileName());
+        QString fullTarget = "./files/" + currentUsername + "/" + (remotePath.startsWith("/") ? remotePath.mid(1) : remotePath);
+        if (QFileInfo::exists(fullTarget)) {
+            QMessageBox::StandardButton reply =
+                QMessageBox::question(this, "同名冲突", QString("文件 \"%1\" 已存在，是否覆盖？").arg(fi.fileName()), QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (reply != QMessageBox::Yes) {
+                ui->statusLabel->setText("上传已取消");
+                return;
+            }
+        }
+
         ui->statusLabel->setText("正在上传文件...");
-        FileManager::instance()->uploadFile(fileName, buildPath(QFileInfo(fileName).fileName()));
+        FileManager::instance()->uploadFile(fileName, remotePath);
     }
 }
 
@@ -352,17 +494,158 @@ void MainWindow::HandleBackButton_clicked() {
 void MainWindow::onDeleteResult(bool success, const QString& message) {
     if (success) {
         ui->statusLabel->setText("文件删除成功");
-        // 刷新当前目录的文件列表
         NetworkManager::instance()->listFiles(currentDirectory);
+        refreshUserInfo();
     } else {
         ui->statusLabel->setText("文件删除失败: " + message);
     }
 }
 
-void MainWindow::on_actionRefresh_triggered() {
-    ui->statusLabel->setText("正在刷新...");
+// ===== 剪贴板功能 =====
+
+void MainWindow::on_actionCopy_triggered() {
+    QList<QListWidgetItem*> selected = ui->fileListWidget->selectedItems();
+    if (selected.isEmpty()) {
+        ui->statusLabel->setText("请先选择要复制的文件/文件夹");
+        return;
+    }
+    m_clipboardPaths.clear();
+    for (auto* item : selected) {
+        QVariantMap data = item->data(Qt::UserRole).toMap();
+        m_clipboardPaths.append(data["name"].toString());
+    }
+    m_clipboardAction = "copy";
+    m_clipboardSourceDir = currentDirectory;
+    ui->statusLabel->setText(QString("已复制 %1 个项目").arg(m_clipboardPaths.size()));
+}
+
+void MainWindow::on_actionCut_triggered() {
+    QList<QListWidgetItem*> selected = ui->fileListWidget->selectedItems();
+    if (selected.isEmpty()) {
+        ui->statusLabel->setText("请先选择要剪切的文件/文件夹");
+        return;
+    }
+    m_clipboardPaths.clear();
+    for (auto* item : selected) {
+        QVariantMap data = item->data(Qt::UserRole).toMap();
+        m_clipboardPaths.append(data["name"].toString());
+    }
+    m_clipboardAction = "cut";
+    m_clipboardSourceDir = currentDirectory;
+    ui->statusLabel->setText(QString("已剪切 %1 个项目").arg(m_clipboardPaths.size()));
+}
+
+void MainWindow::on_actionPaste_triggered() {
+    if (m_clipboardAction.isEmpty() || m_clipboardPaths.isEmpty()) {
+        ui->statusLabel->setText("剪贴板为空，请先复制或剪切文件");
+        return;
+    }
+
+    // 检查目标是否存在同名文件
+    bool hasConflict = false;
+    QString conflictName;
+    for (const QString& name : m_clipboardPaths) {
+        QString targetPath = buildPath(name);
+        QString fullTarget = "./files/" + currentUsername + "/" + (targetPath.startsWith("/") ? targetPath.mid(1) : targetPath);
+        if (QFileInfo::exists(fullTarget)) {
+            hasConflict = true;
+            conflictName = name;
+            break;
+        }
+    }
+
+    if (hasConflict) {
+        QMessageBox::StandardButton reply =
+            QMessageBox::question(this, "同名冲突", QString("目标路径已存在 \"%1\"，是否覆盖？").arg(conflictName), QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (reply != QMessageBox::Yes) {
+            ui->statusLabel->setText("粘贴已取消");
+            return;
+        }
+    }
+
+    // 执行复制/移动
+    for (const QString& name : m_clipboardPaths) {
+        QString sourcePath = m_clipboardSourceDir;
+        if (!sourcePath.endsWith("/")) sourcePath += "/";
+        sourcePath += name;
+
+        QString targetPath = buildPath(name);
+
+        if (m_clipboardAction == "copy") {
+            NetworkManager::instance()->copyFile(sourcePath, targetPath);
+        } else if (m_clipboardAction == "cut") {
+            // 如果同目录则不操作
+            if (m_clipboardSourceDir == currentDirectory) {
+                continue;
+            }
+            NetworkManager::instance()->moveFile(sourcePath, targetPath);
+        }
+    }
+
+    if (m_clipboardAction == "copy") {
+        ui->statusLabel->setText("正在复制...");
+    } else {
+        ui->statusLabel->setText("正在移动...");
+        m_clipboardAction = "";
+        m_clipboardPaths.clear();
+    }
+
+    // 粘贴后立即刷新列表
     NetworkManager::instance()->listFiles(currentDirectory);
-    ui->statusLabel->setText("刷新完成");
+    refreshUserInfo();
+}
+
+// ===== 账户管理 =====
+
+void MainWindow::on_actionUpdateAvatar_triggered() {
+    QString filePath = QFileDialog::getOpenFileName(this, "选择头像图片", QDir::homePath(), "图片文件 (*.png *.jpg *.jpeg *.bmp)");
+    if (filePath.isEmpty()) return;
+
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        ui->statusLabel->setText("无法打开头像文件");
+        return;
+    }
+    QByteArray imageData = file.readAll();
+    file.close();
+
+    // 限制头像大小 2MB
+    if (imageData.size() > 2 * 1024 * 1024) {
+        ui->statusLabel->setText("头像文件不能超过 2MB");
+        return;
+    }
+
+    NetworkManager::instance()->updateAvatar(imageData);
+    ui->statusLabel->setText("正在更新头像...");
+}
+
+void MainWindow::on_actionUpdateNickname_triggered() {
+    bool ok;
+    QString nickname = QInputDialog::getText(this, "修改昵称", "请输入新昵称:", QLineEdit::Normal, m_currentUser.nickname(), &ok);
+    if (!ok || nickname.isEmpty()) return;
+
+    if (nickname.length() > 50) {
+        ui->statusLabel->setText("昵称不能超过 50 个字符");
+        return;
+    }
+
+    NetworkManager::instance()->updateNickname(nickname);
+    ui->statusLabel->setText("正在更新昵称...");
+}
+
+void MainWindow::on_actionUpdateEmail_triggered() {
+    bool ok;
+    QString email = QInputDialog::getText(this, "修改邮箱", "请输入新邮箱:", QLineEdit::Normal, m_currentUser.email(), &ok);
+    if (!ok || email.isEmpty()) return;
+
+    // 简单邮箱格式校验
+    if (!email.contains('@') || !email.contains('.')) {
+        ui->statusLabel->setText("邮箱格式不正确");
+        return;
+    }
+
+    NetworkManager::instance()->updateEmail(email);
+    ui->statusLabel->setText("正在更新邮箱...");
 }
 
 void MainWindow::on_actionChangePassword_triggered() {

@@ -1,31 +1,26 @@
 #include "filemanager.h"
-#include <QDir>
-#include <QFile>
-#include <QFileInfo>
+
 #include <QCryptographicHash>
 #include <QDebug>
+#include <QDir>
 #include <QDirIterator>
+#include <QFile>
+#include <QFileInfo>
 
-FileManager *FileManager::m_instance = nullptr;
+FileManager* FileManager::m_instance = nullptr;
 
-FileManager::FileManager(QObject *parent) : QObject(parent)
-{
-}
+FileManager::FileManager(QObject* parent) : QObject(parent) {}
 
-FileManager::~FileManager()
-{
-}
+FileManager::~FileManager() {}
 
-FileManager *FileManager::instance()
-{
+FileManager* FileManager::instance() {
     if (!m_instance) {
         m_instance = new FileManager();
     }
     return m_instance;
 }
 
-bool FileManager::init(const QString &basePath)
-{
+bool FileManager::init(const QString& basePath) {
     m_basePath = basePath;
     QDir dir(m_basePath);
     if (!dir.exists()) {
@@ -34,8 +29,7 @@ bool FileManager::init(const QString &basePath)
     return true;
 }
 
-bool FileManager::saveFile(const QString &username, const QString &filename, const QByteArray &data)
-{
+bool FileManager::saveFile(const QString& username, const QString& filename, const QByteArray& data) {
     qDebug() << "=== FileManager::saveFile called ===";
     QString userPath = m_basePath + "/" + username;
 
@@ -76,8 +70,7 @@ bool FileManager::saveFile(const QString &username, const QString &filename, con
     return written == data.size();
 }
 
-QByteArray FileManager::readFile(const QString &username, const QString &filename)
-{
+QByteArray FileManager::readFile(const QString& username, const QString& filename) {
     QString filePath;
     if (filename.startsWith("/")) {
         QString relativePath = filename.mid(1);
@@ -102,8 +95,7 @@ QByteArray FileManager::readFile(const QString &username, const QString &filenam
     return data;
 }
 
-bool FileManager::deleteFile(const QString &username, const QString &filename)
-{
+bool FileManager::deleteFile(const QString& username, const QString& filename) {
     QString filePath;
     if (filename.startsWith("/")) {
         QString relativePath = filename.mid(1);
@@ -129,8 +121,7 @@ bool FileManager::deleteFile(const QString &username, const QString &filename)
     return result;
 }
 
-bool FileManager::renameFile(const QString &username, const QString &oldFilename, const QString &newFilename)
-{
+bool FileManager::renameFile(const QString& username, const QString& oldFilename, const QString& newFilename) {
     QString oldPath;
     QString newPath;
 
@@ -166,12 +157,10 @@ bool FileManager::renameFile(const QString &username, const QString &oldFilename
         qDebug() << "Rename from" << oldPath << "to" << newPath << "result:" << result << "error:" << file.errorString();
     }
 
-
     return result;
 }
 
-bool FileManager::deleteDirectory(const QString &username, const QString &dirname)
-{
+bool FileManager::deleteDirectory(const QString& username, const QString& dirname) {
     QString dirPath;
     if (dirname.startsWith("/")) {
         dirPath = m_basePath + "/" + username + "/" + dirname.mid(1);
@@ -186,8 +175,7 @@ bool FileManager::deleteDirectory(const QString &username, const QString &dirnam
     return false;
 }
 
-bool FileManager::deleteUserFiles(const QString &username)
-{
+bool FileManager::deleteUserFiles(const QString& username) {
     QString userPath = m_basePath + "/" + username;
     QDir userDir(userPath);
     if (userDir.exists()) {
@@ -196,14 +184,12 @@ bool FileManager::deleteUserFiles(const QString &username)
     return true;
 }
 
-bool FileManager::moveFile(const QString &username, const QString &oldPath, const QString &newPath)
-{
+bool FileManager::moveFile(const QString& username, const QString& oldPath, const QString& newPath) {
     // 移动文件/文件夹本质上与重命名逻辑一致，可直接复用
     return renameFile(username, oldPath, newPath);
 }
 
-qint64 FileManager::getFileSize(const QString &username, const QString &filename)
-{
+qint64 FileManager::getFileSize(const QString& username, const QString& filename) {
     QString filePath;
     if (filename.startsWith("/")) {
         filePath = m_basePath + "/" + username + "/" + filename.mid(1);
@@ -230,8 +216,7 @@ qint64 FileManager::getFileSize(const QString &username, const QString &filename
     return fileInfo.size();
 }
 
-QString FileManager::getFileHash(const QString &username, const QString &filename)
-{
+QString FileManager::getFileHash(const QString& username, const QString& filename) {
     QString filePath;
     if (filename.startsWith("/")) {
         filePath = m_basePath + "/" + username + "/" + filename.mid(1);
@@ -258,4 +243,18 @@ QString FileManager::getFileHash(const QString &username, const QString &filenam
 
     file.close();
     return hash.result().toHex();
+}
+
+qint64 FileManager::getUserUsedSpace(const QString& username) {
+    QString userPath = m_basePath + "/" + username;
+    QDir userDir(userPath);
+    if (!userDir.exists()) return 0;
+
+    qint64 totalSize = 0;
+    QDirIterator it(userPath, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        totalSize += it.fileInfo().size();
+    }
+    return totalSize;
 }

@@ -29,9 +29,19 @@ class ClientHandler : public QObject {
     void handleCreateDirectory(const QString& path);
     void handleDelete(const QString& path);
     void handleRename(const QString& oldPath, const QString& newPath);
+    void handleCopy(const QString& sourcePath, const QString& targetPath);
+    void handleMove(const QString& sourcePath, const QString& targetPath);
     void handleChangePassword(const QString& oldPassword, const QString& newPassword, const QString& confirmPassword);
     void handleUpdateUserInfo(const QString& email, const QString& nickname);
+    void handleUpdateNickname(const QString& nickname);
+    void handleUpdateEmail(const QString& email);
+    void handleUpdateAvatar(const QString& avatarBase64);
+    void handleGetUserInfo();
     void handleDeleteUser();
+
+    // 安全校验相关
+    static bool isExtensionForbidden(const QString& filename);
+    static const qint64 MAX_FILE_SIZE;
 
    private:
     QTcpSocket* m_socket;

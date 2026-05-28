@@ -33,6 +33,7 @@ class FileManager : public QObject {
     ~FileManager();
 
     QList<FileInfo> getFileList();
+    bool nameExists(const QString& name) const;
     bool uploadFile(const QString& localPath, const QString& remotePath);
     bool downloadFile(const QString& remotePath, const QString& localPath);
     bool createDirectory(const QString& path);

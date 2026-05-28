@@ -51,6 +51,13 @@ FileManager* FileManager::instance() {
 
 QList<FileInfo> FileManager::getFileList() { return m_fileList; }
 
+bool FileManager::nameExists(const QString& name) const {
+    for (const FileInfo& fi : m_fileList) {
+        if (fi.name() == name) return true;
+    }
+    return false;
+}
+
 bool FileManager::uploadFile(const QString& localPath, const QString& remotePath) { return NetworkManager::instance()->uploadFile(localPath, remotePath); }
 
 bool FileManager::downloadFile(const QString& remotePath, const QString& localPath) { return NetworkManager::instance()->downloadFile(remotePath, localPath); }

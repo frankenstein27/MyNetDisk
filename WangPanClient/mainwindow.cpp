@@ -161,6 +161,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         }
     });
 
+    // 连接用户信息接收信号，更新头像、昵称、存储空间
+    connect(NetworkManager::instance(), &NetworkManager::userInfoReceived, this, [=](const QString& nickname, const QString& email, qint64 quota, qint64 usedSpace, const QString& avatar) {
+        m_currentUser.setNickname(nickname);
+        m_currentUser.setEmail(email);
+        m_currentUser.setQuota(quota);
+        m_currentUser.setUsedSpace(usedSpace);
+        m_currentUser.setAvatar(avatar);
+        updateUserDisplay();
+        updateStorageDisplay();
+    });
+
     // 连接文件管理器的上传/下载进度信号，绑定到进度条并显示速度
     connect(FileManager::instance(), &FileManager::uploadProgress, this, [=](qint64 bytesSent, qint64 bytesTotal) {
         if (bytesTotal > 0) {
@@ -210,14 +221,33 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         if (success) {
             ui->statusLabel->setText("上传成功");
             NetworkManager::instance()->listFiles(currentDirectory);
+            refreshUserInfo();  // 刷新存储空间显示
         } else {
             ui->statusLabel->setText("上传失败: " + message);
         }
     });
     connect(FileManager::instance(), &FileManager::deleteResult, this, &MainWindow::onDeleteResult);
 
+    // 头像/昵称/邮箱修改成功后实时刷新用户信息
+    connect(NetworkManager::instance(), &NetworkManager::updateAvatarResult, this, [=](bool success, const QString&) {
+        if (success) refreshUserInfo();
+    });
+    connect(NetworkManager::instance(), &NetworkManager::updateNicknameResult, this, [=](bool success, const QString&) {
+        if (success) refreshUserInfo();
+    });
+    connect(NetworkManager::instance(), &NetworkManager::updateEmailResult, this, [=](bool success, const QString&) {
+        if (success) refreshUserInfo();
+    });
+
     // 初始化文件列表
     NetworkManager::instance()->listFiles(currentDirectory);
+
+    // 隐藏左侧目录树模块
+    ui->directoryTree->setVisible(false);
+    if (ui->splitter) {
+        // 将 fileWidget 拉到全宽
+        ui->splitter->setSizes(QList<int>() << 0 << 1);
+    }
 }
 
 MainWindow::~MainWindow() { delete ui; }
@@ -234,11 +264,12 @@ void MainWindow::setUsername(const QString& username) {
 void MainWindow::updateUserDisplay() {
     m_nicknameLabel->setText(m_currentUser.nickname().isEmpty() ? currentUsername : m_currentUser.nickname());
 
-    // 加载头像
-    QString avatarPath = m_currentUser.avatar();
-    if (!avatarPath.isEmpty() && QFile::exists(avatarPath)) {
-        QPixmap pix(avatarPath);
-        if (!pix.isNull()) {
+    // 加载头像：从 Base64 解码显示
+    QString avatarBase64 = m_currentUser.avatar();
+    if (!avatarBase64.isEmpty()) {
+        QByteArray avatarData = QByteArray::fromBase64(avatarBase64.toUtf8());
+        QPixmap pix;
+        if (pix.loadFromData(avatarData) && !pix.isNull()) {
             m_avatarLabel->setPixmap(pix.scaled(36, 36, Qt::KeepAspectRatio, Qt::SmoothTransformation));
             return;
         }
@@ -298,8 +329,7 @@ void MainWindow::on_actionNewDirectory_triggered() {
         QString path = buildPath(dirName);
 
         // 检查同名冲突
-        QString fullPath = "./files/" + currentUsername + "/" + (path.startsWith("/") ? path.mid(1) : path);
-        if (QDir(fullPath).exists()) {
+        if (FileManager::instance()->nameExists(dirName)) {
             QMessageBox::StandardButton reply = QMessageBox::question(this, "同名冲突", QString("目录 \"%1\" 已存在，是否覆盖？").arg(dirName), QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
             if (reply != QMessageBox::Yes) {
                 ui->statusLabel->setText("创建目录已取消");
@@ -333,8 +363,7 @@ void MainWindow::on_actionUploadFile_triggered() {
 
         // 同名冲突检测
         QString remotePath = buildPath(fi.fileName());
-        QString fullTarget = "./files/" + currentUsername + "/" + (remotePath.startsWith("/") ? remotePath.mid(1) : remotePath);
-        if (QFileInfo::exists(fullTarget)) {
+        if (FileManager::instance()->nameExists(fi.fileName())) {
             QMessageBox::StandardButton reply =
                 QMessageBox::question(this, "同名冲突", QString("文件 \"%1\" 已存在，是否覆盖？").arg(fi.fileName()), QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
             if (reply != QMessageBox::Yes) {
@@ -415,8 +444,7 @@ void MainWindow::on_uploadButton_clicked() {
 
         // 同名冲突检测
         QString remotePath = buildPath(fi.fileName());
-        QString fullTarget = "./files/" + currentUsername + "/" + (remotePath.startsWith("/") ? remotePath.mid(1) : remotePath);
-        if (QFileInfo::exists(fullTarget)) {
+        if (FileManager::instance()->nameExists(fi.fileName())) {
             QMessageBox::StandardButton reply =
                 QMessageBox::question(this, "同名冲突", QString("文件 \"%1\" 已存在，是否覆盖？").arg(fi.fileName()), QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
             if (reply != QMessageBox::Yes) {
@@ -541,13 +569,11 @@ void MainWindow::on_actionPaste_triggered() {
         return;
     }
 
-    // 检查目标是否存在同名文件
+    // 检查目标是否存在同名文件/目录
     bool hasConflict = false;
     QString conflictName;
     for (const QString& name : m_clipboardPaths) {
-        QString targetPath = buildPath(name);
-        QString fullTarget = "./files/" + currentUsername + "/" + (targetPath.startsWith("/") ? targetPath.mid(1) : targetPath);
-        if (QFileInfo::exists(fullTarget)) {
+        if (FileManager::instance()->nameExists(name)) {
             hasConflict = true;
             conflictName = name;
             break;

@@ -333,30 +333,34 @@ void ClientHandler::continueUpload() {
         return;
     }
 
-    // 保存文件并响应客户端
+    // 保存文件并响应客户端（先删除已有文件实现真正覆盖）
+    FileManager::instance()->deleteFile(m_username, m_uploadRemotePath);
     if (FileManager::instance()->saveFile(m_username, m_uploadRemotePath, fileData)) {
         m_socket->write("UPLOAD_OK\n");
         m_socket->flush();
         qDebug() << "UPLOAD_OK sent";
         LogManager::instance()->logUserAction(m_username, "upload", "file", m_uploadFileName, "File uploaded", m_socket->peerAddress().toString());
 
-        // 同步写入数据库 files 表
-        int rootDirId = DatabaseManager::instance()->getRootDirectoryId(m_username);
-        if (rootDirId >= 0) {
-            QString ext = m_uploadFileName.contains('.') ? m_uploadFileName.section('.', -1) : "";
-            DatabaseManager::instance()->addFile(m_username, m_uploadFileName, m_uploadRemotePath, fileData.size(), ext, rootDirId);
-
-            // 更新已用空间
-            qint64 usedSpace = FileManager::instance()->getUserUsedSpace(m_username);
-            QSqlQuery updateQuery(QSqlDatabase::database());
-            updateQuery.prepare("UPDATE users SET used_space = ? WHERE username = ?");
-            updateQuery.addBindValue(usedSpace);
-            updateQuery.addBindValue(m_username);
-            updateQuery.exec();
-
-            // 写入数据库操作日志
-            DatabaseManager::instance()->logAction(m_username, "upload", "file", m_uploadFileName, "上传文件: " + m_uploadRemotePath, m_socket->peerAddress().toString());
+        // 同步写入数据库 files 表：解析文件所在目录的 directory_id
+        int dirId = DatabaseManager::instance()->getRootDirectoryId(m_username);
+        QString parentDir = m_uploadRemotePath.section('/', 0, -2);  // 取父目录路径
+        if (!parentDir.isEmpty() && parentDir != "/") {
+            // 非根目录：确保父目录在 directories 表中存在
+            dirId = DatabaseManager::instance()->ensureDirectoryId(m_username, parentDir);
         }
+        QString ext = m_uploadFileName.contains('.') ? m_uploadFileName.section('.', -1) : "";
+        DatabaseManager::instance()->addFile(m_username, m_uploadFileName, m_uploadRemotePath, fileData.size(), ext, dirId);
+
+        // 更新已用空间
+        qint64 usedSpace = FileManager::instance()->getUserUsedSpace(m_username);
+        QSqlQuery updateQuery(QSqlDatabase::database());
+        updateQuery.prepare("UPDATE users SET used_space = ? WHERE username = ?");
+        updateQuery.addBindValue(usedSpace);
+        updateQuery.addBindValue(m_username);
+        updateQuery.exec();
+
+        // 写入数据库操作日志
+        DatabaseManager::instance()->logAction(m_username, "upload", "file", m_uploadFileName, "上传文件: " + m_uploadRemotePath, m_socket->peerAddress().toString());
     } else {
         m_socket->write("UPLOAD_FAIL Save failed\n");
         m_socket->flush();
@@ -517,10 +521,17 @@ void ClientHandler::handleCopy(const QString& sourcePath, const QString& targetP
         return;
     }
 
-    // 构建完整的文件系统路径
-    QString normalizedSource = sourcePath;
-    if (normalizedSource.startsWith("/")) normalizedSource = normalizedSource.mid(1);
-    QString fullSourcePath = "./files/" + m_username + "/" + normalizedSource;
+    // 规范化路径：去除开头的 "/"，统一使用相对路径拼接
+    auto normPath = [](const QString& p) -> QString {
+        QString r = p;
+        if (r.startsWith("/")) r = r.mid(1);
+        return r;
+    };
+    auto fullFsPath = [&](const QString& rel) -> QString { return "./files/" + m_username + "/" + rel; };
+
+    QString normSrc = normPath(sourcePath);
+    QString normTgt = normPath(targetPath);
+    QString fullSourcePath = fullFsPath(normSrc);
     QFileInfo srcInfo(fullSourcePath);
 
     if (!srcInfo.exists()) {
@@ -529,7 +540,14 @@ void ClientHandler::handleCopy(const QString& sourcePath, const QString& targetP
     }
 
     if (srcInfo.isDir()) {
-        // 目录复制：使用 QDir::relativeFilePath 避免路径拼接错误
+        // 目录复制：先删除目标（覆盖模式），再创建并复制
+        QString fullTargetDir = fullFsPath(normTgt);
+        if (QDir(fullTargetDir).exists()) {
+            QDir(fullTargetDir).removeRecursively();
+        }
+        QDir().mkpath(fullTargetDir);
+
+        // 遍历源目录下所有内容并复制到目标
         QDir sourceDir(fullSourcePath);
         QDirIterator it(fullSourcePath, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
         bool allOk = true;
@@ -538,19 +556,17 @@ void ClientHandler::handleCopy(const QString& sourcePath, const QString& targetP
             QString relPath = sourceDir.relativeFilePath(it.filePath());
             if (relPath == ".") continue;
 
-            QString normalizedTarget = targetPath;
-            if (normalizedTarget.startsWith("/")) normalizedTarget = normalizedTarget.mid(1);
-            QString destRelPath = normalizedTarget + "/" + relPath;
+            // 目标相对路径 = 目标目录 + "/" + 源内相对路径（无嵌套问题）
+            QString destRel = normTgt + "/" + relPath;
 
             if (it.fileInfo().isDir()) {
-                QString destDirFullPath = "./files/" + m_username + "/" + destRelPath;
-                QDir().mkpath(destDirFullPath);
+                QDir().mkpath(fullFsPath(destRel));
             } else {
                 QFile f(it.filePath());
                 if (f.open(QIODevice::ReadOnly)) {
                     QByteArray data = f.readAll();
                     f.close();
-                    if (!FileManager::instance()->saveFile(m_username, "/" + destRelPath, data)) {
+                    if (!FileManager::instance()->saveFile(m_username, "/" + destRel, data)) {
                         allOk = false;
                     }
                 } else {
@@ -571,6 +587,8 @@ void ClientHandler::handleCopy(const QString& sourcePath, const QString& targetP
             m_socket->write("COPY_FAIL Source file empty\n");
             return;
         }
+        // 覆盖模式：先删除目标（如果存在），再保存
+        FileManager::instance()->deleteFile(m_username, targetPath);
         if (FileManager::instance()->saveFile(m_username, targetPath, fileData)) {
             m_socket->write("COPY_OK\n");
             LogManager::instance()->logUserAction(m_username, "copy", "file", sourcePath, "File copied to " + targetPath, m_socket->peerAddress().toString());
@@ -691,16 +709,24 @@ void ClientHandler::handleGetUserInfo() {
         // 计算用户实际已用空间
         usedSpace = FileManager::instance()->getUserUsedSpace(m_username);
 
-        QString avatarPath;
+        // 读取头像文件并转换为 Base64 发送（客户端可直接解码显示）
+        QString avatarBase64;
         QSqlQuery query(QSqlDatabase::database());
         query.prepare("SELECT avatar FROM users WHERE username = ?");
         query.addBindValue(m_username);
         if (query.exec() && query.next()) {
-            avatarPath = query.value(0).toString();
+            QString avatarPath = query.value(0).toString();
+            if (!avatarPath.isEmpty() && QFile::exists(avatarPath)) {
+                QFile f(avatarPath);
+                if (f.open(QIODevice::ReadOnly)) {
+                    avatarBase64 = f.readAll().toBase64();
+                    f.close();
+                }
+            }
         }
 
         QString response =
-            "USER_INFO " + nickname.toUtf8() + " " + email.toUtf8() + " " + QString::number(quota).toUtf8() + " " + QString::number(usedSpace).toUtf8() + " " + avatarPath.toUtf8() + "\n";
+            "USER_INFO " + nickname.toUtf8() + " " + email.toUtf8() + " " + QString::number(quota).toUtf8() + " " + QString::number(usedSpace).toUtf8() + " " + avatarBase64.toUtf8() + "\n";
         m_socket->write(response.toUtf8());
         m_socket->flush();
     } else {

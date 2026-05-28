@@ -35,6 +35,7 @@ class DatabaseManager : public QObject {
     bool createDirectory(const QString& username, const QString& path);
     bool getDirectoryList(const QString& username, int parentId, QList<QMap<QString, QVariant>>& directoryList);
     int getRootDirectoryId(const QString& username);
+    int ensureDirectoryId(const QString& username, const QString& path);
 
     // 日志操作记录
     void logAction(const QString& username, const QString& action, const QString& targetType, const QString& targetId, const QString& details, const QString& ip);

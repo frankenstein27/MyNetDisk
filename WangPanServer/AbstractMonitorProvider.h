@@ -5,13 +5,13 @@
 
 // 统一的系统资源快照结构体
 struct SystemSnapshot {
-    double cpuUsage;       // CPU 利用率 (0.0 ~ 100.0)
-    double memoryTotalGB;  // 总物理内存 (GB)
-    double memoryUsedGB;   // 已用物理内存 (GB)
-    double diskTotalGB;    // 总磁盘 (GB)
-    double diskUsedGB;     // 已用磁盘 (GB)
-    qint64 networkIn;      // 网络接收字节 (自系统启动以来的累计值)
-    qint64 networkOut;     // 网络发送字节 (自系统启动以来的累计值)
+    double cpuUsage;          // CPU 利用率 (0.0 ~ 100.0)
+    double memoryTotalMB;     // 总物理内存 (MB)
+    double memoryUsedMB;      // 已用物理内存 (MB)
+    double diskTotalGB;       // 总磁盘 (GB)
+    double diskUsagePercent;  // 磁盘使用率 (0.0 ~ 100.0)
+    qint64 networkIn;         // 网络接收字节 (自系统启动以来的累计值)
+    qint64 networkOut;        // 网络发送字节 (自系统启动以来的累计值)
 };
 
 // 抽象采集基类（完全不包含任何平台特有头文件）

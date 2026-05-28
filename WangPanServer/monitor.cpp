@@ -61,8 +61,8 @@ void Monitor::onTimerTimeout() {
     SystemSnapshot snap = m_provider->collect();
 
     m_cpuUsage = static_cast<float>(snap.cpuUsage);
-    m_memoryUsage = static_cast<float>(snap.memoryUsedGB);
-    m_diskUsage = static_cast<float>(snap.diskUsedGB);
+    m_memoryUsage = static_cast<float>(snap.memoryUsedMB);
+    m_diskUsage = static_cast<float>(snap.diskUsagePercent);
     m_networkIn = snap.networkIn;
     m_networkOut = snap.networkOut;
 

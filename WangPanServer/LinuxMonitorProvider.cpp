@@ -8,10 +8,10 @@
 SystemSnapshot LinuxMonitorProvider::collect() {
     SystemSnapshot snap;
     snap.cpuUsage = 0.0;
-    snap.memoryTotalGB = 0.0;
-    snap.memoryUsedGB = 0.0;
+    snap.memoryTotalMB = 0.0;
+    snap.memoryUsedMB = 0.0;
     snap.diskTotalGB = 0.0;
-    snap.diskUsedGB = 0.0;
+    snap.diskUsagePercent = 0.0;
     snap.networkIn = 0;
     snap.networkOut = 0;
 
@@ -59,19 +59,21 @@ SystemSnapshot LinuxMonitorProvider::collect() {
                 break;  // 拿到这两个核心字段即可退出
             }
         }
-        // KB -> GB: 除以 1024*1024
-        snap.memoryTotalGB = totalKB / (1024.0 * 1024.0);
-        snap.memoryUsedGB = (totalKB - availKB) / (1024.0 * 1024.0);
+        // KB -> MB: 除以 1024
+        snap.memoryTotalMB = totalKB / 1024.0;
+        snap.memoryUsedMB = (totalKB - availKB) / 1024.0;
         memFile.close();
     }
 
     // ------------------------------------------------------------------
-    // 3. 跨平台磁盘空间获取 (QStorageInfo 在 Linux 下同样精准)
+    // 3. 跨平台磁盘使用率 (QStorageInfo 在 Linux 下同样精准)
     // ------------------------------------------------------------------
     QStorageInfo storage = QStorageInfo::root();
     if (storage.isValid() && storage.isReady()) {
-        snap.diskTotalGB = static_cast<double>(storage.bytesTotal()) / (1024.0 * 1024.0 * 1024.0);
-        snap.diskUsedGB = static_cast<double>(storage.bytesTotal() - storage.bytesAvailable()) / (1024.0 * 1024.0 * 1024.0);
+        double totalBytes = static_cast<double>(storage.bytesTotal());
+        double usedBytes = static_cast<double>(storage.bytesTotal() - storage.bytesAvailable());
+        snap.diskTotalGB = totalBytes / (1024.0 * 1024.0 * 1024.0);
+        snap.diskUsagePercent = (totalBytes > 0) ? (usedBytes / totalBytes) * 100.0 : 0.0;
     }
 
     // ------------------------------------------------------------------

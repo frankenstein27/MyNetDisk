@@ -18,10 +18,10 @@ bool WindowsMonitorTool::m_prevCpuValid = false;
 SystemSnapshot WindowsMonitorTool::collect() {
     SystemSnapshot snap;
     snap.cpuUsage = 0.0;
-    snap.memoryTotalGB = 0.0;
-    snap.memoryUsedGB = 0.0;
+    snap.memoryTotalMB = 0.0;
+    snap.memoryUsedMB = 0.0;
     snap.diskTotalGB = 0.0;
-    snap.diskUsedGB = 0.0;
+    snap.diskUsagePercent = 0.0;
     snap.networkIn = 0;
     snap.networkOut = 0;
 
@@ -47,19 +47,21 @@ SystemSnapshot WindowsMonitorTool::collect() {
         m_prevCpuValid = true;
     }
 
-    // --- 内存 ---
+    // --- 内存 (MB) ---
     MEMORYSTATUSEX memStatus;
     memStatus.dwLength = sizeof(memStatus);
     if (GlobalMemoryStatusEx(&memStatus)) {
-        snap.memoryTotalGB = static_cast<double>(memStatus.ullTotalPhys) / (1024.0 * 1024 * 1024);
-        snap.memoryUsedGB = static_cast<double>(memStatus.ullTotalPhys - memStatus.ullAvailPhys) / (1024.0 * 1024 * 1024);
+        snap.memoryTotalMB = static_cast<double>(memStatus.ullTotalPhys) / (1024.0 * 1024.0);
+        snap.memoryUsedMB = static_cast<double>(memStatus.ullTotalPhys - memStatus.ullAvailPhys) / (1024.0 * 1024.0);
     }
 
-    // --- 磁盘 ---
+    // --- 磁盘使用率 (%) ---
     QStorageInfo storage = QStorageInfo::root();
     if (storage.isValid()) {
-        snap.diskTotalGB = static_cast<double>(storage.bytesTotal()) / (1024.0 * 1024 * 1024);
-        snap.diskUsedGB = static_cast<double>(storage.bytesTotal() - storage.bytesAvailable()) / (1024.0 * 1024 * 1024);
+        double totalBytes = static_cast<double>(storage.bytesTotal());
+        double usedBytes = static_cast<double>(storage.bytesTotal() - storage.bytesAvailable());
+        snap.diskTotalGB = totalBytes / (1024.0 * 1024.0 * 1024.0);
+        snap.diskUsagePercent = (totalBytes > 0) ? (usedBytes / totalBytes) * 100.0 : 0.0;
     }
 
     return snap;
@@ -70,10 +72,10 @@ SystemSnapshot WindowsMonitorTool::collect() {
 SystemSnapshot WindowsMonitorTool::collect() {
     SystemSnapshot snap;
     snap.cpuUsage = 0.0;
-    snap.memoryTotalGB = 0.0;
-    snap.memoryUsedGB = 0.0;
+    snap.memoryTotalMB = 0.0;
+    snap.memoryUsedMB = 0.0;
     snap.diskTotalGB = 0.0;
-    snap.diskUsedGB = 0.0;
+    snap.diskUsagePercent = 0.0;
     snap.networkIn = 0;
     snap.networkOut = 0;
     return snap;

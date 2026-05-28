@@ -348,8 +348,13 @@ void ClientHandler::continueUpload() {
             // 非根目录：确保父目录在 directories 表中存在
             dirId = DatabaseManager::instance()->ensureDirectoryId(m_username, parentDir);
         }
-        QString ext = m_uploadFileName.contains('.') ? m_uploadFileName.section('.', -1) : "";
-        DatabaseManager::instance()->addFile(m_username, m_uploadFileName, m_uploadRemotePath, fileData.size(), ext, dirId);
+        // 防护：directory_id 无效时跳过 DB 写入，不阻塞上传成功响应
+        if (dirId > 0) {
+            QString ext = m_uploadFileName.contains('.') ? m_uploadFileName.section('.', -1) : "";
+            DatabaseManager::instance()->addFile(m_username, m_uploadFileName, m_uploadRemotePath, fileData.size(), ext, dirId);
+        } else {
+            qWarning("continueUpload: directory_id invalid (dirId=%d), skipping DB file record for %s", dirId, qPrintable(m_uploadRemotePath));
+        }
 
         // 更新已用空间
         qint64 usedSpace = FileManager::instance()->getUserUsedSpace(m_username);
@@ -548,12 +553,13 @@ void ClientHandler::handleCopy(const QString& sourcePath, const QString& targetP
         QDir().mkpath(fullTargetDir);
 
         // 遍历源目录下所有内容并复制到目标
-        QDir sourceDir(fullSourcePath);
+        // 统一使用绝对路径计算相对路径，避免 QDir::relativeFilePath 格式不匹配导致路径嵌套
+        QDir sourceDir(QFileInfo(fullSourcePath).absoluteFilePath());
         QDirIterator it(fullSourcePath, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
         bool allOk = true;
         while (it.hasNext()) {
             it.next();
-            QString relPath = sourceDir.relativeFilePath(it.filePath());
+            QString relPath = sourceDir.relativeFilePath(it.fileInfo().absoluteFilePath());
             if (relPath == ".") continue;
 
             // 目标相对路径 = 目标目录 + "/" + 源内相对路径（无嵌套问题）

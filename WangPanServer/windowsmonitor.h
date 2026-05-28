@@ -1,20 +1,10 @@
 #ifndef WINDOWSMONITOR_H
 #define WINDOWSMONITOR_H
 
-#include <QtGlobal>
+#include "AbstractMonitorProvider.h"
 
-// 系统资源快照结构体
-struct SystemSnapshot {
-    double cpuUsage;       // CPU 利用率百分比
-    double memoryTotalGB;  // 总物理内存 (GB)
-    double memoryUsedGB;   // 已用物理内存 (GB)
-    double diskTotalGB;    // 总磁盘 (GB)
-    double diskUsedGB;     // 已用磁盘 (GB)
-    qint64 networkIn;      // 网络接收字节
-    qint64 networkOut;     // 网络发送字节
-};
-
-// 跨平台系统监控工具类（所有平台相关代码在 .cpp 中）
+// 系统监控工具类（所有平台相关代码在 .cpp 中通过 #ifdef Q_OS_WIN 隔离）
+// 保留此类用于向后兼容；新的采集逻辑请使用 AbstractMonitorProvider 子类
 class WindowsMonitorTool {
    public:
     static SystemSnapshot collect();

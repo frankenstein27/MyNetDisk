@@ -4,7 +4,7 @@
 #include <QObject>
 #include <QTimer>
 
-#include "windowsmonitor.h"
+class AbstractMonitorProvider;
 
 class Monitor : public QObject {
     Q_OBJECT
@@ -35,6 +35,7 @@ class Monitor : public QObject {
     static Monitor* m_instance;
 
     QTimer* m_timer;
+    AbstractMonitorProvider* m_provider;  // 多态指针：运行时自动路由到 Windows/Linux 实现
     float m_cpuUsage;
     float m_memoryUsage;
     float m_diskUsage;

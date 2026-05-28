@@ -4,11 +4,25 @@
 #include <QSqlQuery>
 #include <QVariant>
 
+#include "AbstractMonitorProvider.h"
 #include "databasemanager.h"
+
+#ifdef Q_OS_WIN
+#include "WindowsMonitorProvider.h"
+#else
+#include "LinuxMonitorProvider.h"
+#endif
 
 Monitor* Monitor::m_instance = nullptr;
 
 Monitor::Monitor(QObject* parent) : QObject(parent), m_cpuUsage(0), m_memoryUsage(0), m_diskUsage(0), m_networkIn(0), m_networkOut(0), m_connectionCount(0) {
+    // 抽象工厂：编译期选择平台实现，运行时通过多态指针透明调用
+#ifdef Q_OS_WIN
+    m_provider = new WindowsMonitorProvider();
+#else
+    m_provider = new LinuxMonitorProvider();
+#endif
+
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &Monitor::onTimerTimeout);
 }
@@ -43,8 +57,8 @@ int Monitor::getConnectionCount() { return m_connectionCount; }
 void Monitor::setConnectionCount(int count) { m_connectionCount = count; }
 
 void Monitor::onTimerTimeout() {
-    // 使用 WindowsMonitorTool 采集真实系统数据
-    SystemSnapshot snap = WindowsMonitorTool::collect();
+    // 运行时完全不用关心底层是 Windows 还是 Linux，多态指针自动正确路由
+    SystemSnapshot snap = m_provider->collect();
 
     m_cpuUsage = static_cast<float>(snap.cpuUsage);
     m_memoryUsage = static_cast<float>(snap.memoryUsedGB);

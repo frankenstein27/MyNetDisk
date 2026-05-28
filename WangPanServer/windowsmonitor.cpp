@@ -64,6 +64,10 @@ SystemSnapshot WindowsMonitorTool::collect() {
         snap.diskUsagePercent = (totalBytes > 0) ? (usedBytes / totalBytes) * 100.0 : 0.0;
     }
 
+    // 采集实现有误，暂不实现，始终返回0
+    snap.diskTotalGB = 0;
+    snap.diskUsagePercent = 0;
+
     return snap;
 }
 

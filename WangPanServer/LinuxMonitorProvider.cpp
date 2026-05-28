@@ -43,8 +43,7 @@ SystemSnapshot LinuxMonitorProvider::collect() {
     }
 
     // ------------------------------------------------------------------
-    // 2. 解析 /proc/meminfo 获取内存 (MemTotal / MemAvailable)
-    //    hqtop 同款算法：MemTotal - MemAvailable = 已用内存
+    // 2. 解析 /proc/meminfo 获取内存 (MemTotal / MemAvailable) MemTotal - MemAvailable = 已用内存
     // ------------------------------------------------------------------
     QFile memFile("/proc/meminfo");
     if (memFile.open(QFile::ReadOnly | QFile::Text)) {
@@ -66,7 +65,7 @@ SystemSnapshot LinuxMonitorProvider::collect() {
     }
 
     // ------------------------------------------------------------------
-    // 3. 跨平台磁盘使用率 (QStorageInfo 在 Linux 下同样精准)
+    // 3. 跨平台磁盘使用率
     // ------------------------------------------------------------------
     QStorageInfo storage = QStorageInfo::root();
     if (storage.isValid() && storage.isReady()) {
@@ -75,6 +74,10 @@ SystemSnapshot LinuxMonitorProvider::collect() {
         snap.diskTotalGB = totalBytes / (1024.0 * 1024.0 * 1024.0);
         snap.diskUsagePercent = (totalBytes > 0) ? (usedBytes / totalBytes) * 100.0 : 0.0;
     }
+
+    // 采集实现有误，暂不实现，始终返回0
+    snap.diskTotalGB = 0;
+    snap.diskUsagePercent = 0;
 
     // ------------------------------------------------------------------
     // 4. 网络流量采集 (/proc/net/dev)

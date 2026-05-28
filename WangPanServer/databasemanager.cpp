@@ -34,6 +34,7 @@ bool DatabaseManager::connect() {
     QString pass = settings.value("Database/password", "root").toString();
 #else
     QString pass = settings.value("Database/password", "hebo").toString();
+#endif
 
     m_db = QSqlDatabase::addDatabase("QMYSQL");
     m_db.setHostName(host);

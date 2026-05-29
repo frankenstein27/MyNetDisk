@@ -405,25 +405,34 @@ void NetworkManager::onReadyRead() {
                 emit downloadResult(false, line.mid(13));
                 return;
             } else {
-                // 如果服务器在发送文件前发来了其他普通指令，存入缓冲池，不能丢弃
+                // 如果服务器在发送文件前发来了其他指令（上一次的遗留指令），存入缓冲池，不能丢弃
                 m_buffer.append(rawLine);
             }
         }
 
         // 接收文件实体数据
+        // 正在下载 && 要下载的文件大小 ＞ 0 && socket 数据就绪，可以读取
         if (m_isDownloading && m_downloadFileSize > 0 && m_socket->bytesAvailable() > 0) {
+            // 还需要读取的大小 = 需要读取的总大小 - 上次读取指令头的大小
             qint64 bytesToRead = m_downloadFileSize - m_downloadBytesReceived;
+            // 从 socket 读取数据
             QByteArray data = m_socket->read(bytesToRead);
+            // 写入到文件中
             m_downloadFile->write(data);
+            // 更新已下载的数据大小
             m_downloadBytesReceived += data.size();
+            // 更新进度条
             emit downloadProgress(m_downloadBytesReceived, m_downloadFileSize);
 
+            // 如果 已接收的文件大小 ＞= 总要接收的文件大小，代表下载完成
             if (m_downloadBytesReceived >= m_downloadFileSize) {
+                // 清理工作和UI更新
                 m_downloadFile->flush();
                 m_downloadFile->close();
                 delete m_downloadFile;
                 m_downloadFile = nullptr;
 
+                // 更新下载状态
                 m_isDownloading = false;
                 m_downloadFileSize = 0;
                 m_downloadBytesReceived = 0;
@@ -437,7 +446,7 @@ void NetworkManager::onReadyRead() {
         }
     }
 
-    // 处理非下载状态下（或刚才被加入缓冲池）的普通指令
+    // 处理非下载状态（或在下载过程中加入缓冲池）的指令
     m_buffer.append(m_socket->readAll());
 
     while (m_buffer.contains('\n')) {

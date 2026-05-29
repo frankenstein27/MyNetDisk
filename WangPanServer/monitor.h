@@ -35,7 +35,7 @@ class Monitor : public QObject {
     static Monitor* m_instance;
 
     QTimer* m_timer;
-    AbstractMonitorProvider* m_provider;  // 多态指针：运行时自动路由到 Windows/Linux 实现
+    AbstractMonitorProvider* m_provider;  // 多态指针：声明父类指针，运行时动态创建 Windows/Linux 子类
     float m_cpuUsage;
     float m_memoryUsage;
     float m_diskUsage;

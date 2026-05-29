@@ -37,6 +37,7 @@ class MainWindow : public QMainWindow {
     void on_downloadButton_clicked();
     void on_logoutButton_clicked();
     void HandleFileListWidget_itemDoubleClicked(QListWidgetItem* item);
+
     void on_actionNewDirectory_triggered();
     void on_actionUploadFile_triggered();
     void on_actionDownloadFile_triggered();
@@ -52,6 +53,7 @@ class MainWindow : public QMainWindow {
     void on_actionUpdateAvatar_triggered();
     void on_actionUpdateNickname_triggered();
     void on_actionUpdateEmail_triggered();
+
     void onDeleteResult(bool success, const QString& message);
     void HandleBackButton_clicked();
 

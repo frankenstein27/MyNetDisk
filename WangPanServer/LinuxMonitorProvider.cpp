@@ -17,7 +17,7 @@ SystemSnapshot LinuxMonitorProvider::collect() {
 
     // ------------------------------------------------------------------
     // 1. 解析 /proc/stat 获取 CPU 利用率（两次采样间的增量）
-    //    hqtop 同款算法：累加所有字段得 curTotalCpu，idle 位于第 5 列（索引 4）
+    //    累加所有字段得 curTotalCpu，idle 位于第 5 列（索引 4）
     // ------------------------------------------------------------------
     QFile statFile("/proc/stat");
     if (statFile.open(QFile::ReadOnly | QFile::Text)) {

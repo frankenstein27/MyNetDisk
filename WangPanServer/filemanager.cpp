@@ -31,6 +31,11 @@ bool FileManager::init(const QString& basePath) {
 }
 
 bool FileManager::saveFile(const QString& username, const QString& filename, const QByteArray& data) {
+    // 处理特殊情况
+    if (filename.isEmpty() || filename == "/" || filename == "." || filename == "..") {
+        qDebug() << "Error: Filename is invalid, cannot save file.";
+        return false;
+    }
     QString userPath = m_basePath + "/" + username;
 
     QDir dir(userPath);
@@ -74,6 +79,11 @@ bool FileManager::saveFile(const QString& username, const QString& filename, con
 }
 
 QByteArray FileManager::readFile(const QString& username, const QString& filename) {
+    if (filename.isEmpty() || filename == "/" || filename == "." || filename == "..") {
+        qDebug() << "Error: Filename is invalid, cannot read file.";
+        return QByteArray();
+    }
+
     QString filePath;
     if (filename.startsWith("/")) {
         QString relativePath = filename.mid(1);
@@ -88,6 +98,7 @@ QByteArray FileManager::readFile(const QString& username, const QString& filenam
         return QByteArray();
     }
 
+    // 只读方式打开文件
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
         return QByteArray();
@@ -125,6 +136,10 @@ bool FileManager::deleteFile(const QString& username, const QString& filename) {
 }
 
 bool FileManager::renameFile(const QString& username, const QString& oldFilename, const QString& newFilename) {
+    if (newFilename.isEmpty() || newFilename == "/" || newFilename == "." || newFilename == "..") {
+        qDebug() << "Error: Filename is invalid, cannot save file.";
+        return false;
+    }
     QString oldPath;
     QString newPath;
 
@@ -164,6 +179,11 @@ bool FileManager::renameFile(const QString& username, const QString& oldFilename
 }
 
 bool FileManager::deleteDirectory(const QString& username, const QString& dirname) {
+    if (dirname.isEmpty() || dirname == "/" || dirname == "." || dirname == "..") {
+        qDebug() << "Error: Directory name is invalid, cannot delete directory.";
+        return false;
+    }
+
     QString dirPath;
     if (dirname.startsWith("/")) {
         dirPath = m_basePath + "/" + username + "/" + dirname.mid(1);
@@ -194,6 +214,11 @@ bool FileManager::moveFile(const QString& username, const QString& oldPath, cons
 }
 
 qint64 FileManager::getFileSize(const QString& username, const QString& filename) {
+    if (filename.isEmpty() || filename == "/" || filename == "." || filename == "..") {
+        qDebug() << "Error: Filename is invalid, cannot get file size.";
+        return -1;
+    }
+
     QString filePath;
     if (filename.startsWith("/")) {
         filePath = m_basePath + "/" + username + "/" + filename.mid(1);
@@ -221,6 +246,11 @@ qint64 FileManager::getFileSize(const QString& username, const QString& filename
 }
 
 QString FileManager::getFileHash(const QString& username, const QString& filename) {
+    if (filename.isEmpty() || filename == "/" || filename == "." || filename == "..") {
+        qDebug() << "Error: Filename is invalid, cannot get file hash.";
+        return QString();
+    }
+
     QString filePath;
     if (filename.startsWith("/")) {
         filePath = m_basePath + "/" + username + "/" + filename.mid(1);

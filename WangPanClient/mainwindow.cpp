@@ -36,12 +36,12 @@ bool MainWindow::isFileExtensionForbidden(const QString& filename) {
     return s_forbiddenExtensions.contains(ext);
 }
 
-const qint64 MainWindow::MAX_UPLOAD_SIZE = 512LL * 1024 * 1024;  // 512MB
+const qint64 MainWindow::MAX_UPLOAD_SIZE = 512LL * 1024 * 1024;  // 单个文件上传限制512MB
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWindow), currentDirectory("/") {
     ui->setupUi(this);
 
-    // ===== 初始化指针（解决野指针段错误） =====
+    // ===== 初始化指针 =====
     // 复用 UI 中已有的 userInfoLabel 作为昵称标签
     m_nicknameLabel = ui->userInfoLabel;
     m_nicknameLabel->setText("加载中...");
@@ -71,15 +71,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         topLayout->insertWidget(2, m_storageLabel);
     }
 
-    // 初始化目录树
-    QTreeWidgetItem* rootItem = new QTreeWidgetItem(ui->directoryTree);
-    rootItem->setText(0, "我的网盘");
-    rootItem->setData(0, Qt::UserRole, "/");
-    ui->directoryTree->addTopLevelItem(rootItem);
-    ui->directoryTree->expandAll();
-
     // 连接信号和槽
-    connect(ui->directoryTree, &QTreeWidget::itemClicked, this, &MainWindow::HandleDirectoryTree_itemClicked);
     connect(ui->fileListWidget, &QListWidget::itemDoubleClicked, this, &MainWindow::HandleFileListWidget_itemDoubleClicked);
     connect(ui->backButton, &QPushButton::clicked, this, &MainWindow::HandleBackButton_clicked);
 
@@ -241,13 +233,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     // 初始化文件列表
     NetworkManager::instance()->listFiles(currentDirectory);
-
-    // 隐藏左侧目录树模块
-    ui->directoryTree->setVisible(false);
-    if (ui->splitter) {
-        // 将 fileWidget 拉到全宽
-        ui->splitter->setSizes(QList<int>() << 0 << 1);
-    }
 }
 
 MainWindow::~MainWindow() { delete ui; }
@@ -300,10 +285,6 @@ void MainWindow::updateStorageDisplay() {
 
 void MainWindow::refreshUserInfo() { NetworkManager::instance()->getUserInfo(); }
 
-void MainWindow::updateDirectoryTree() {
-    // 这里可以实现目录树的更新逻辑
-}
-
 QString MainWindow::buildPath(const QString& name) {
     if (currentDirectory == "/") {
         return "/" + name;
@@ -312,10 +293,13 @@ QString MainWindow::buildPath(const QString& name) {
     }
 }
 
+/// @brief 创建目录的处理函数，包含输入验证和同名冲突检测
 void MainWindow::on_actionNewDirectory_triggered() {
     bool ok;
     QString dirName = QInputDialog::getText(this, "新建目录", "请输入目录名称:", QLineEdit::Normal, "", &ok);
     if (ok && !dirName.isEmpty()) {
+        // 由于Windows和Linux安装的Qt版本不同，此处只能使用条件编译，正常情况下使用一种即可
+        // 由于Windows和Linux的文件系统限制，需要进行校验，禁止创建包含特殊字符的目录
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         QRegularExpression rx("[\\\\/:*?\"<>|]");
 #else
@@ -347,6 +331,7 @@ void MainWindow::on_actionNewDirectory_triggered() {
 }
 
 void MainWindow::on_actionUploadFile_triggered() {
+    // 打开一个文件选择框，由用户选择要上传的文件
     QString fileName = QFileDialog::getOpenFileName(this, "选择文件", QDir::homePath());
     if (!fileName.isEmpty()) {
         QFileInfo fi(fileName);
@@ -378,16 +363,18 @@ void MainWindow::on_actionUploadFile_triggered() {
 }
 
 void MainWindow::on_actionDownloadFile_triggered() {
+    // 获取当前选中的文件项
     QListWidgetItem* item = ui->fileListWidget->currentItem();
-    if (item) {
+    if (item) { // 如果选中了
         QVariantMap data = item->data(Qt::UserRole).toMap();
         QString fileName = data["name"].toString();
+        // 打开文件路径选择对话框，用户选择文件保存位置
         QString savePath = QFileDialog::getSaveFileName(this, "保存文件", QDir::homePath() + "/" + fileName);
         if (!savePath.isEmpty()) {
             ui->statusLabel->setText("正在下载文件...");
             FileManager::instance()->downloadFile(buildPath(fileName), savePath);
         }
-    } else {
+    } else {    // 未选中任何内容
         ui->statusLabel->setText("请先选择要下载的文件");
     }
 }
@@ -474,11 +461,9 @@ void MainWindow::on_downloadButton_clicked() {
 
 void MainWindow::on_logoutButton_clicked() { emit logoutRequested(); }
 
-void MainWindow::HandleDirectoryTree_itemClicked(QTreeWidgetItem* item, int column) {
-    currentDirectory = item->data(0, Qt::UserRole).toString();
-    NetworkManager::instance()->listFiles(currentDirectory);
-}
-
+/// @brief 双击文件列表项的处理函数，根据类型执行不同操作
+/// @details 如果是目录，则进入目录；如果是文件，则下载到临时目录。
+/// @param item 双击的文件项
 void MainWindow::HandleFileListWidget_itemDoubleClicked(QListWidgetItem* item) {
     // 获取文件信息
     QVariantMap data = item->data(Qt::UserRole).toMap();
@@ -504,7 +489,7 @@ void MainWindow::HandleFileListWidget_itemDoubleClicked(QListWidgetItem* item) {
         }
         ui->statusLabel->setText("正在下载文件: " + fileName);
         FileManager::instance()->downloadFile(filePath, tempPath);
-        // 下载结果由 downloadResult 信号异步通知，不在此处显示成功
+        // 下载结果由 downloadResult 信号异步通知，异步返回后显示在statusLabel上
     }
 }
 
@@ -680,6 +665,7 @@ void MainWindow::on_actionChangePassword_triggered() {
     dlg.setWindowTitle("修改密码");
     QFormLayout form(&dlg);
 
+    // 新建密码输入框：旧密码、新密码、确认新密码
     QLineEdit* oldPw = new QLineEdit(&dlg);
     oldPw->setEchoMode(QLineEdit::Password);
     oldPw->setPlaceholderText("请输入旧密码");
@@ -690,6 +676,7 @@ void MainWindow::on_actionChangePassword_triggered() {
     confirmPw->setEchoMode(QLineEdit::Password);
     confirmPw->setPlaceholderText("请确认新密码");
 
+    // 添加到表单布局
     form.addRow("旧密码:", oldPw);
     form.addRow("新密码:", newPw);
     form.addRow("确认密码:", confirmPw);
@@ -699,6 +686,7 @@ void MainWindow::on_actionChangePassword_triggered() {
     connect(&buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(&buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
 
+    // 如果用户点击取消，直接返回
     if (dlg.exec() != QDialog::Accepted) return;
 
     QString old = oldPw->text(), nw = newPw->text(), cf = confirmPw->text();
@@ -726,13 +714,13 @@ void MainWindow::on_actionDeleteAccount_triggered() {
 
     auto conn = std::make_shared<QMetaObject::Connection>();
     *conn = connect(NetworkManager::instance(), &NetworkManager::deleteUserResult, this, [=](bool success, const QString& msg) {
-        disconnect(*conn);
         if (success) {
             QMessageBox::information(this, "注销成功", msg);
             emit logoutRequested();
         } else {
             QMessageBox::warning(this, "注销失败", msg);
         }
+        disconnect(*conn);
     });
     NetworkManager::instance()->deleteUser();
 }

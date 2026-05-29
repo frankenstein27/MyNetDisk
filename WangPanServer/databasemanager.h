@@ -7,6 +7,7 @@
 #include <QSqlQuery>
 #include <QString>
 
+// 单例数据库管理类，负责与MySQL数据库交互（建表、增删改查、日志记录），提供用户和文件相关的操作接口
 class DatabaseManager : public QObject {
     Q_OBJECT
 

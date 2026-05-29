@@ -23,6 +23,7 @@ FileManager* FileManager::instance() {
 bool FileManager::init(const QString& basePath) {
     m_basePath = basePath;
     QDir dir(m_basePath);
+    // 如果目录不存在，尝试创建它
     if (!dir.exists()) {
         return dir.mkpath(m_basePath);
     }
@@ -30,7 +31,6 @@ bool FileManager::init(const QString& basePath) {
 }
 
 bool FileManager::saveFile(const QString& username, const QString& filename, const QByteArray& data) {
-    qDebug() << "=== FileManager::saveFile called ===";
     QString userPath = m_basePath + "/" + username;
 
     QDir dir(userPath);
@@ -42,9 +42,11 @@ bool FileManager::saveFile(const QString& username, const QString& filename, con
 
     QString filePath;
     if (filename.startsWith("/")) {
+        // 拼凑出完成路径（系统文件层面）
         QString relativePath = filename.mid(1);
         filePath = userPath + "/" + relativePath;
 
+        // 如果文件父目录不存在，则递归创建所有父目录
         QDir fileDir = QFileInfo(filePath).dir();
         if (!fileDir.exists()) {
             fileDir.mkpath(fileDir.path());
@@ -53,13 +55,14 @@ bool FileManager::saveFile(const QString& username, const QString& filename, con
         filePath = userPath + "/" + filename;
     }
 
-    // 新增：防止将数据写入到一个同名文件夹上
+    // 同名的文件存在并且是一个文件夹，则无法保存文件
     if (QFileInfo(filePath).isDir()) {
         qDebug() << "Error: Target path is a directory, cannot save file:" << filePath;
         return false;
     }
 
     QFile file(filePath);
+    // 以只写方式打开文件
     if (!file.open(QIODevice::WriteOnly)) {
         qDebug() << "Failed to open file for writing";
         return false;
@@ -179,6 +182,7 @@ bool FileManager::deleteUserFiles(const QString& username) {
     QString userPath = m_basePath + "/" + username;
     QDir userDir(userPath);
     if (userDir.exists()) {
+        // 删除用户目录下的所有文件和子目录
         return userDir.removeRecursively();
     }
     return true;

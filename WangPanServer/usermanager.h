@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QString>
 
+// 用户管理类（单例模式），提供用户注册、登录、修改密码、更新信息和删除账号等功能
 class UserManager : public QObject
 {
     Q_OBJECT

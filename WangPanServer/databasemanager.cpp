@@ -183,6 +183,7 @@ bool DatabaseManager::getUser(const QString& username, QString& passwordHash, QS
     }
 
     if (query.next()) {
+        // 传入数据为引用，所以在函数内部修改，在外部可以读取到修改后的值
         passwordHash = query.value(0).toString();
         salt = query.value(1).toString();
         return true;
@@ -517,6 +518,7 @@ bool DatabaseManager::deleteUser(const QString& username) {
     query.prepare("SELECT id FROM users WHERE username = ?");
     query.addBindValue(username);
 
+    // 查询失败或用户不存在
     if (!query.exec() || !query.next()) {
         qWarning("Failed to get user id: %s", qPrintable(query.lastError().text()));
         return false;
@@ -531,11 +533,6 @@ bool DatabaseManager::deleteUser(const QString& username) {
 
     // 删除用户的目录记录
     query.prepare("DELETE FROM directories WHERE user_id = ?");
-    query.addBindValue(userId);
-    query.exec();
-
-    // 删除用户的分享记录
-    query.prepare("DELETE FROM shares WHERE user_id = ?");
     query.addBindValue(userId);
     query.exec();
 

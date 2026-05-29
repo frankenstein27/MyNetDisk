@@ -28,17 +28,14 @@ class MainWindow : public QMainWindow {
 
     void setUsername(const QString& username);
 
-   public slots:
-    void updateDirectoryTree();
-
    signals:
+    // 登出信号，通知主窗口切换回登录界面
     void logoutRequested();
 
    private slots:
     void on_uploadButton_clicked();
     void on_downloadButton_clicked();
     void on_logoutButton_clicked();
-    void HandleDirectoryTree_itemClicked(QTreeWidgetItem* item, int column);
     void HandleFileListWidget_itemDoubleClicked(QListWidgetItem* item);
     void on_actionNewDirectory_triggered();
     void on_actionUploadFile_triggered();

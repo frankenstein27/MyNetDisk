@@ -36,3 +36,5 @@ WangPanClientExe/
 WangPanClientRelease/
 
 WangPanServerRelease/
+
+.vscode/

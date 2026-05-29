@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QTcpSocket>
 
+// 客户端处理器，负责处理与单个客户端的通信
 class ClientHandler : public QObject {
     Q_OBJECT
 

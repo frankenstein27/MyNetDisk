@@ -1,14 +1,14 @@
 #include <QApplication>
+
 #include "loginwindow.h"
-#include "registerwindow.h"
 #include "mainwindow.h"
 #include "networkmanager.h"
+#include "registerwindow.h"
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char* argv[]) {
     QApplication a(argc, argv);
 
-    // 初始化网络管理器
+    // 初始化单例网络管理器
     NetworkManager::instance();
 
     // 创建登录窗口
@@ -20,7 +20,8 @@ int main(int argc, char *argv[])
     QObject::connect(&loginWindow, &LoginWindow::registerRequested, &registerWindow, &RegisterWindow::show);
     QObject::connect(&registerWindow, &RegisterWindow::registerSuccess, &loginWindow, &LoginWindow::show);
     QObject::connect(&registerWindow, &RegisterWindow::cancelRequested, &loginWindow, &LoginWindow::show);
-    QObject::connect(&loginWindow, &LoginWindow::loginSuccess, [&](const QString &username) {
+    QObject::connect(&loginWindow, &LoginWindow::loginSuccess, [&](const QString& username) {
+        // 设置主窗口的用户名，并显示主窗口，隐藏登录窗口
         mainWindow.setUsername(username);
         mainWindow.show();
         loginWindow.hide();

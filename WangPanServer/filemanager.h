@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QString>
 
+// 服务端文件管理（单例模式），负责文件的保存、读取、删除、重命名、移动等操作，提供用户空间管理和文件哈希计算等功能
 class FileManager : public QObject {
     Q_OBJECT
 

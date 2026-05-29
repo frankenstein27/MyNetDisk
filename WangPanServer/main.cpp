@@ -6,6 +6,7 @@
 #include "monitor.h"
 #include "server.h"
 
+// 服务端主程序入口
 int main(int argc, char* argv[]) {
     QCoreApplication a(argc, argv);
 
@@ -22,7 +23,7 @@ int main(int argc, char* argv[]) {
     // 启动监控
     Monitor::instance()->start();
 
-    // 创建服务器实例
+    // 创建服务器实例(TCP监听)
     Server server;
     int port = settings.value("Server/port", 8888).toInt();
     server.start(port);

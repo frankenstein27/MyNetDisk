@@ -3,6 +3,7 @@
 
 #include <QString>
 
+// 用户模型存储用户信息，提供访问接口
 class User
 {
 public:

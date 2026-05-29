@@ -5,6 +5,7 @@
 #include <QObject>
 #include <QString>
 
+// 客户端文件抽象层（单例），维护当前目录文件列表，提供文件操作接口，连接网络管理器处理结果
 class FileInfo {
    public:
     FileInfo() {}
@@ -33,6 +34,7 @@ class FileManager : public QObject {
     ~FileManager();
 
     QList<FileInfo> getFileList();
+    // 是否存在名为name的文件，用于冲突检测
     bool nameExists(const QString& name) const;
     bool uploadFile(const QString& localPath, const QString& remotePath);
     bool downloadFile(const QString& remotePath, const QString& localPath);

@@ -9,6 +9,7 @@
 #include <QTcpSocket>
 #include <QThread>
 
+// 客户端网络管理类（核心，单例模式）TCP管理，协议发送接收，异步上传、下载状态机
 class NetworkManager : public QObject {
     Q_OBJECT
 
@@ -26,7 +27,7 @@ class NetworkManager : public QObject {
     void changePassword(const QString& oldPassword, const QString& newPassword, const QString& confirmPassword);
     void deleteUser();
 
-    // 文件相关操作
+    // 文件、目录相关操作
     bool uploadFile(const QString& localPath, const QString& remotePath);
     bool downloadFile(const QString& remotePath, const QString& localPath);
     bool listFiles(const QString& directory);

@@ -71,6 +71,7 @@ void NetworkManager::login(const QString& username, const QString& password) {
 
     // 构建登录请求（密码做 SHA-256 哈希，避免明文传输）
     QByteArray request;
+    // 登录指令格式：LOGIN username password
     request.append("LOGIN " + encodeField(username).toUtf8() + " " + hashPassword(password).toUtf8() + "\n");
     m_socket->write(request);
     m_socket->flush();
@@ -84,6 +85,7 @@ void NetworkManager::registerUser(const QString& username, const QString& email,
 
     // 构建注册请求（密码做 SHA-256 哈希，避免明文传输）
     QByteArray request;
+    // 注册指令格式：REGISTER username email password nickname
     request.append("REGISTER " + encodeField(username).toUtf8() + " " + encodeField(email).toUtf8() + " " + hashPassword(password).toUtf8() + " " + encodeField(nickname).toUtf8() + "\n");
     m_socket->write(request);
     m_socket->flush();
@@ -95,6 +97,7 @@ void NetworkManager::changePassword(const QString& oldPassword, const QString& n
         return;
     }
     QByteArray request;
+    // 更改密码指令格式：CHANGE_PASSWORD oldPassword newPassword confirmPassword（密码都做 SHA-256 哈希，避免明文传输）
     request.append("CHANGE_PASSWORD " + encodeField(hashPassword(oldPassword)).toUtf8() + " " + encodeField(hashPassword(newPassword)).toUtf8() + " " +
                    encodeField(hashPassword(confirmPassword)).toUtf8() + "\n");
     m_socket->write(request);
@@ -171,13 +174,14 @@ void NetworkManager::startUploadTransfer(qint64 offset) {
         return;
     }
 
-    // 定位到续传位置
+    // 定位到续传位置（断点续传核心）
     if (offset > 0) {
         m_uploadFile->seek(offset);
     }
 
     // 发送 UPLOAD 请求头
     QByteArray request;
+    // 断点续传上传文件指令格式：UPLOAD remotePath fileSize fileName offset
     request.append("UPLOAD " + encodeField(m_checkRemotePath).toUtf8() + " " + QString::number(m_uploadFileSize).toUtf8() + " " + encodeField(m_checkFileName).toUtf8() + " " +
                    QString::number(offset).toUtf8() + "\n");
     qDebug() << "UPLOAD request:" << request;
@@ -273,6 +277,7 @@ bool NetworkManager::downloadFile(const QString& remotePath, const QString& loca
 
     // 发送下载请求
     QByteArray request;
+    // 下载文件指令格式：DOWNLOAD remotePath offset
     request.append("DOWNLOAD " + encodeField(remotePath).toUtf8() + " " + QString::number(m_downloadBytesReceived).toUtf8() + "\n");
     m_socket->write(request);
     m_socket->flush();
@@ -288,6 +293,7 @@ bool NetworkManager::listFiles(const QString& directory) {
 
     // 构建列出文件请求
     QByteArray request;
+    // 获取文件列表指令格式：LIST directory
     request.append("LIST " + encodeField(directory).toUtf8() + "\n");
     m_socket->write(request);
     return m_socket->waitForBytesWritten();
@@ -299,6 +305,7 @@ void NetworkManager::copyFile(const QString& sourcePath, const QString& targetPa
         return;
     }
     QByteArray request;
+    // 复制文件/目录指令格式：COPY sourcePath targetPath
     request.append("COPY " + encodeField(sourcePath).toUtf8() + " " + encodeField(targetPath).toUtf8() + "\n");
     m_socket->write(request);
     m_socket->flush();
@@ -310,6 +317,7 @@ void NetworkManager::moveFile(const QString& sourcePath, const QString& targetPa
         return;
     }
     QByteArray request;
+    // 移动/粘贴文件/目录指令格式：MOVE sourcePath targetPath
     request.append("MOVE " + encodeField(sourcePath).toUtf8() + " " + encodeField(targetPath).toUtf8() + "\n");
     m_socket->write(request);
     m_socket->flush();
@@ -330,6 +338,7 @@ void NetworkManager::updateNickname(const QString& nickname) {
         return;
     }
     QByteArray request;
+    // 修改昵称指令格式：UPDATE_NICKNAME nickname
     request.append("UPDATE_NICKNAME " + encodeField(nickname).toUtf8() + "\n");
     m_socket->write(request);
     m_socket->flush();
@@ -341,6 +350,7 @@ void NetworkManager::updateEmail(const QString& email) {
         return;
     }
     QByteArray request;
+    // 修改邮箱指令格式：UPDATE_EMAIL email
     request.append("UPDATE_EMAIL " + encodeField(email).toUtf8() + "\n");
     m_socket->write(request);
     m_socket->flush();
@@ -352,6 +362,7 @@ void NetworkManager::updateAvatar(const QByteArray& imageData) {
         return;
     }
     QByteArray request;
+    // 修改头像指令格式：UPDATE_AVATAR avatarData（Base64编码后的图片数据）
     request.append("UPDATE_AVATAR " + imageData.toBase64() + "\n");
     m_socket->write(request);
     m_socket->flush();
@@ -434,7 +445,7 @@ void NetworkManager::onReadyRead() {
         QByteArray line = m_buffer.left(pos);
         m_buffer.remove(0, pos + 1);
 
-        // 解析响应
+        // 解析响应（根据响应头判断类型，提取信息并发出对应信号，再由信号对应的槽函数处理）
         if (line.startsWith("LOGIN_OK")) {
             emit loginResult(true, "登录成功");
         } else if (line.startsWith("LOGIN_FAIL")) {
@@ -446,6 +457,7 @@ void NetworkManager::onReadyRead() {
             QString message = QString::fromUtf8(line.mid(13));
             emit registerResult(false, message);
         } else if (line.startsWith("FILE_LIST")) {
+            // 返回下标为10及以后的值
             emit fileListReceived(line.mid(10));
         } else if (line.startsWith("UPLOAD_RESUME")) {
             // 服务器告知已有文件大小，从该偏移续传

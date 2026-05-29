@@ -18,6 +18,11 @@
 
 #include "ui_previewwindow.h"
 
+// 后缀为以下类型可以以文本方式预览
+static const QSet<QString> s_PreviewAsTxt = {"txt", "cpp", "h", "c", "hpp", "java", "py", "js", "html", "css"};
+// 图像
+static const QSet<QString> s_PreviewAsImage = {"jpg", "jpeg", "png", "bmp", "gif"};
+
 PreviewWindow::PreviewWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::PreviewWindow), m_imageZoom(1.0), m_imageViewLabel(nullptr) { ui->setupUi(this); }
 
 PreviewWindow::~PreviewWindow() { delete ui; }
@@ -29,11 +34,10 @@ void PreviewWindow::setFile(const QString& filePath, const QString& fileName) {
 
     // 根据文件类型选择预览方式
     QString extension = fileName.split('.').last().toLower();
-    if (extension == "txt" || extension == "cpp" || extension == "h" || extension == "c" || extension == "hpp" || extension == "java" || extension == "py" || extension == "js" ||
-        extension == "html" || extension == "css" || extension == "sh") {
+    if (s_PreviewAsTxt.contains(extension)) {
         previewTextFile();
         ui->previewTabWidget->setCurrentWidget(ui->textTab);
-    } else if (extension == "jpg" || extension == "jpeg" || extension == "png" || extension == "bmp" || extension == "gif") {
+    } else if (s_PreviewAsImage.contains(extension)) {
         previewImageFile();
         ui->previewTabWidget->setCurrentWidget(ui->imageTab);
     } else if (extension == "pdf") {
@@ -55,6 +59,7 @@ void PreviewWindow::setFile(const QString& filePath, const QString& fileName) {
     }
 }
 
+// 打开要预览的文本文件，并显示在文本编辑器中
 void PreviewWindow::previewTextFile() {
     QFile file(m_filePath);
     if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -67,6 +72,7 @@ void PreviewWindow::previewTextFile() {
     }
 }
 
+// 打开要预览的图片文件，并显示在标签中
 void PreviewWindow::previewImageFile() {
     // 清理旧布局
     if (ui->imageTab->layout()) {

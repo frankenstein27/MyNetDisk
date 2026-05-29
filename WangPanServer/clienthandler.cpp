@@ -41,11 +41,11 @@ void ClientHandler::onReadyRead() {
     QByteArray data = m_socket->readAll();
     m_buffer.append(data);
 
-    // 如果正在接收上传数据，所有数据均为文件内容，不解析命令
+    // 如果正在接收上传数据，那么所有数据均为文件内容，不解析命令
     if (m_uploading) {
         continueUpload();
         return;
-    }
+    }   
 
     // 处理所有完整的请求行
     while (m_buffer.contains('\n')) {
@@ -67,12 +67,14 @@ void ClientHandler::onReadyRead() {
         QString command = parts[0];
 
         if (command == "LOGIN") {
+            // 登录指令格式：LOGIN username password
             if (parts.size() >= 3) {
                 QString username = parts[1];
                 QString password = parts[2];
                 handleLogin(username, password);
             }
         } else if (command == "REGISTER") {
+            // 注册指令格式：REGISTER username email password nickname
             if (parts.size() >= 5) {
                 QString username = parts[1];
                 QString email = parts[2];
@@ -81,17 +83,20 @@ void ClientHandler::onReadyRead() {
                 handleRegister(username, email, password, nickname);
             }
         } else if (command == "LIST") {
+            // 获取目录列表指令格式：LIST directory
             if (parts.size() >= 2) {
                 QString directory = parts[1];
                 handleListFiles(directory);
             }
         } else if (command == "UPLOAD_CHECK") {
+            // 上传检查指令格式：UPLOAD_CHECK remotePath fileName
             if (parts.size() >= 3) {
                 QString remotePath = parts[1];
                 QString fileName = parts[2];
                 handleUploadCheck(remotePath, fileName);
             }
         } else if (command == "UPLOAD") {
+            // 上传指令格式：UPLOAD remotePath fileSize fileName offset
             if (parts.size() >= 5) {
                 QString remotePath = parts[1];
                 qint64 fileSize = parts[2].toLongLong();
@@ -114,28 +119,33 @@ void ClientHandler::onReadyRead() {
                 handleUpload(remotePath, fileSize, fileName, offset);
             }
         } else if (command == "DOWNLOAD") {
+            // 下载指令格式：DOWNLOAD remotePath offset
             if (parts.size() >= 3) {
                 QString remotePath = parts[1];
                 qint64 offset = parts[2].toLongLong();
                 handleDownload(remotePath, offset);
             }
         } else if (command == "MKDIR") {
+            // 创建目录指令格式：MKDIR path
             if (parts.size() >= 2) {
                 QString path = parts[1];  // 已由 decodeField 解码
                 handleCreateDirectory(path);
             }
         } else if (command == "DELETE") {
+            // 删除文件/目录指令格式：DELETE path
             if (parts.size() >= 2) {
                 QString path = parts[1];
                 handleDelete(path);
             }
         } else if (command == "RENAME") {
+            // 重命名指令格式：RENAME oldPath newPath
             if (parts.size() >= 3) {
                 QString oldPath = parts[1];
                 QString newPath = parts[2];
                 handleRename(oldPath, newPath);
             }
         } else if (command == "CHANGE_PASSWORD") {
+            // 修改密码指令格式：CHANGE_PASSWORD oldPassword newPassword confirmPassword
             if (parts.size() >= 4) {
                 QString oldPassword = parts[1];
                 QString newPassword = parts[2];
@@ -143,38 +153,48 @@ void ClientHandler::onReadyRead() {
                 handleChangePassword(oldPassword, newPassword, confirmPassword);
             }
         } else if (command == "UPDATE_USER_INFO") {
+            // 更新用户信息指令格式：UPDATE_USER_INFO email nickname
             if (parts.size() >= 3) {
                 QString email = parts[1];
                 QString nickname = parts[2];
                 handleUpdateUserInfo(email, nickname);
             }
         } else if (command == "DELETE_USER") {
+            // 删除用户指令格式：DELETE_USER（当前用户存放在 m_username 中）
             handleDeleteUser();
         } else if (command == "COPY") {
+            // 复制文件/目录指令格式：COPY sourcePath targetPath
             if (parts.size() >= 3) {
                 handleCopy(parts[1], parts[2]);
             }
         } else if (command == "MOVE") {
+            // 移动文件/目录指令格式：MOVE sourcePath targetPath
             if (parts.size() >= 3) {
                 handleMove(parts[1], parts[2]);
             }
         } else if (command == "UPDATE_NICKNAME") {
+            // 更新昵称指令格式：UPDATE_NICKNAME nickname
             if (parts.size() >= 2) {
                 handleUpdateNickname(parts[1]);
             }
         } else if (command == "UPDATE_EMAIL") {
+            // 更新邮箱指令格式：UPDATE_EMAIL email
             if (parts.size() >= 2) {
                 handleUpdateEmail(parts[1]);
             }
         } else if (command == "UPDATE_AVATAR") {
+            // 更新头像指令格式：UPDATE_AVATAR avatarData（Base64编码后的图片数据）
             if (parts.size() >= 2) {
                 handleUpdateAvatar(parts[1]);
             }
         } else if (command == "GET_USER_INFO") {
+            // 获取用户信息指令格式：GET_USER_INFO（响应包含 email、nickname、used_space、quota 等信息）
             handleGetUserInfo();
         } else if (command == "EXISTS") {
+            // 检查文件/目录是否存在指令格式：EXISTS path
             if (parts.size() >= 2) {
                 QString path = parts[1];
+                // 文件的大小 >= 0 说明存在且是文件；如果返回 -1 则可能是不存在，也可能是一个目录，所以还要额外检查目录是否存在
                 qint64 size = FileManager::instance()->getFileSize(m_username, path);
                 if (size >= 0) {
                     m_socket->write("EXISTS_TRUE\n");

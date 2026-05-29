@@ -26,12 +26,13 @@
 #include <QRegExp>
 #endif
 
-// 客户端侧危险后缀黑名单（与后端保持一致）
+// 客户端侧危险后缀黑名单校验（与后端保持一致）
 static const QSet<QString> s_forbiddenExtensions = {"sh", "exe", "bat", "cmd", "msi", "apk", "dll", "scr", "com", "pif", "vbs", "ps1", "jar", "app", "run", "deb", "rpm"};
 
 bool MainWindow::isFileExtensionForbidden(const QString& filename) {
     int dotPos = filename.lastIndexOf('.');
     if (dotPos < 0) return false;
+    // 获取文件后缀
     QString ext = filename.mid(dotPos + 1).toLower();
     return s_forbiddenExtensions.contains(ext);
 }
@@ -365,7 +366,7 @@ void MainWindow::on_actionUploadFile_triggered() {
 void MainWindow::on_actionDownloadFile_triggered() {
     // 获取当前选中的文件项
     QListWidgetItem* item = ui->fileListWidget->currentItem();
-    if (item) { // 如果选中了
+    if (item) {  // 如果选中了
         QVariantMap data = item->data(Qt::UserRole).toMap();
         QString fileName = data["name"].toString();
         // 打开文件路径选择对话框，用户选择文件保存位置
@@ -374,7 +375,7 @@ void MainWindow::on_actionDownloadFile_triggered() {
             ui->statusLabel->setText("正在下载文件...");
             FileManager::instance()->downloadFile(buildPath(fileName), savePath);
         }
-    } else {    // 未选中任何内容
+    } else {  // 未选中任何内容
         ui->statusLabel->setText("请先选择要下载的文件");
     }
 }
@@ -517,6 +518,7 @@ void MainWindow::onDeleteResult(bool success, const QString& message) {
 // ===== 剪贴板功能 =====
 
 void MainWindow::on_actionCopy_triggered() {
+    // 获取选中的文件/目录项，保存到剪贴板路径列表，并记录是复制还是剪切
     QList<QListWidgetItem*> selected = ui->fileListWidget->selectedItems();
     if (selected.isEmpty()) {
         ui->statusLabel->setText("请先选择要复制的文件/文件夹");
@@ -576,19 +578,23 @@ void MainWindow::on_actionPaste_triggered() {
 
     // 执行复制/移动
     for (const QString& name : m_clipboardPaths) {
+        // 源路径 = 剪贴板记录的目录 + 每一个文件名
         QString sourcePath = m_clipboardSourceDir;
         if (!sourcePath.endsWith("/")) sourcePath += "/";
         sourcePath += name;
 
+        // 构建目标路径（绝对路径）
         QString targetPath = buildPath(name);
 
         if (m_clipboardAction == "copy") {
+            // 调用网络端的复制文件
             NetworkManager::instance()->copyFile(sourcePath, targetPath);
         } else if (m_clipboardAction == "cut") {
             // 如果同目录则不操作
             if (m_clipboardSourceDir == currentDirectory) {
                 continue;
             }
+            // 剪切，即移动文件
             NetworkManager::instance()->moveFile(sourcePath, targetPath);
         }
     }
@@ -603,6 +609,7 @@ void MainWindow::on_actionPaste_triggered() {
 
     // 粘贴后立即刷新列表
     NetworkManager::instance()->listFiles(currentDirectory);
+    // 刷新用户空间占用
     refreshUserInfo();
 }
 
@@ -620,9 +627,10 @@ void MainWindow::on_actionUpdateAvatar_triggered() {
     QByteArray imageData = file.readAll();
     file.close();
 
-    // 限制头像大小 2MB
-    if (imageData.size() > 2 * 1024 * 1024) {
-        ui->statusLabel->setText("头像文件不能超过 2MB");
+    // 限制头像大小 4MB
+    if (imageData.size() > 4 * 1024 * 1024) {
+        ui->statusLabel->setText("头像文件不能超过 4MB");
+        file.close();
         return;
     }
 
@@ -731,6 +739,7 @@ void MainWindow::on_actionClearPreview_triggered() {
     filters << "*.txt" << "*.cpp" << "*.h" << "*.c" << "*.hpp" << "*.java"
             << "*.py" << "*.js" << "*.html" << "*.css" << "*.sh"
             << "*.jpg" << "*.jpeg" << "*.png" << "*.bmp" << "*.gif" << "*.pdf";
+    // 只删除预览文件，避免误删其他临时文件
     QFileInfoList files = tempDir.entryInfoList(filters, QDir::Files);
     if (files.isEmpty()) {
         ui->statusLabel->setText("没有需要清理的预览文件");

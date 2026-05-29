@@ -33,23 +33,30 @@ class MainWindow : public QMainWindow {
     void logoutRequested();
 
    private slots:
+    // 上传、下载和登出
     void on_uploadButton_clicked();
     void on_downloadButton_clicked();
     void on_logoutButton_clicked();
+    // 文件列表双击（进入目录或预览文件）
     void HandleFileListWidget_itemDoubleClicked(QListWidgetItem* item);
-
+    // 新建、上传、下载、删除和重命名操作
     void on_actionNewDirectory_triggered();
     void on_actionUploadFile_triggered();
     void on_actionDownloadFile_triggered();
     void on_actionDelete_triggered();
     void on_actionRename_triggered();
+    // 退出登录
     void on_actionExit_triggered();
+    // 修改密码和注销账号
     void on_actionChangePassword_triggered();
     void on_actionDeleteAccount_triggered();
+    // 清除预览文件缓存
     void on_actionClearPreview_triggered();
+    // 复制、剪切和粘贴
     void on_actionCopy_triggered();
     void on_actionCut_triggered();
     void on_actionPaste_triggered();
+    // 更新头像、昵称和邮箱
     void on_actionUpdateAvatar_triggered();
     void on_actionUpdateNickname_triggered();
     void on_actionUpdateEmail_triggered();

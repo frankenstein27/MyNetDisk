@@ -401,6 +401,11 @@ void MainWindow::on_actionRename_triggered() {
         QString oldFileName = data["name"].toString();
         bool ok;
         QString newFileName = QInputDialog::getText(this, "重命名文件", "请输入新的文件名:", QLineEdit::Normal, oldFileName, &ok);
+        if (isFileExtensionForbidden(newFileName)) {
+            QString suffix = QFileInfo(newFileName).suffix();
+            QMessageBox::warning(this, "禁止重命名", "不允许重命名为此类型的文件（" + suffix + "），可能为可执行文件或高风险文件。");
+            return;
+        }
         if (ok && !newFileName.isEmpty() && newFileName != oldFileName) {
             if (FileManager::instance()->renameFile(buildPath(oldFileName), buildPath(newFileName))) {
                 ui->statusLabel->setText("文件重命名成功");

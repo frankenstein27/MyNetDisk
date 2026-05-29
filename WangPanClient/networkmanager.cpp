@@ -9,7 +9,7 @@
 #include <QTimer>
 #include <QUrl>
 
-// 协议字段百分号编码（处理空格等特殊字符）
+// 协议字段百分号编码（协议使用空格作为字段分隔符，当文件名/路径中包含空格时，需要通过百分号编码（URL Encoding）避免解析错误）
 static QString encodeField(const QString& field) { return QString::fromUtf8(QUrl::toPercentEncoding(field)); }
 
 // 客户端侧密码哈希（SHA-256），避免明文传输
@@ -136,6 +136,7 @@ bool NetworkManager::uploadFile(const QString& localPath, const QString& remoteP
     qDebug() << "localPath:" << localPath << "remotePath:" << remotePath << "fileName:" << fileName;
 
     QByteArray checkRequest;
+    // 查询服务器文件指令格式：UPLOAD_CHECK remotePath fileName
     checkRequest.append("UPLOAD_CHECK " + encodeField(remotePath).toUtf8() + " " + encodeField(fileName).toUtf8() + "\n");
     m_socket->write(checkRequest);
 

@@ -45,7 +45,7 @@ void ClientHandler::onReadyRead() {
     if (m_uploading) {
         continueUpload();
         return;
-    }   
+    }
 
     // 处理所有完整的请求行
     while (m_buffer.contains('\n')) {
@@ -303,6 +303,7 @@ void ClientHandler::handleUpload(const QString& remotePath, qint64 fileSize, con
 void ClientHandler::continueUpload() {
     if (!m_uploading) return;
 
+    // 剩余需要上传的大小
     qint64 remaining = m_uploadExpectedSize - m_uploadData.size();
 
     // 从 m_buffer 中获取尽可能多的数据
@@ -310,6 +311,7 @@ void ClientHandler::continueUpload() {
         qint64 fromBuffer = qMin((qint64)m_buffer.size(), remaining);
         m_uploadData.append(m_buffer.left(fromBuffer));
         m_buffer.remove(0, fromBuffer);
+        // 更新剩余需要上传的大小
         remaining -= fromBuffer;
         qDebug() << "Consumed" << fromBuffer << "bytes from buffer, total:" << m_uploadData.size() << "/" << m_uploadExpectedSize;
     }
@@ -329,11 +331,14 @@ void ClientHandler::continueUpload() {
     // 处理断点续传：拼接已有文件
     if (m_uploadOffset > 0) {
         qDebug() << "Resuming upload: offset" << m_uploadOffset;
+        // 读取已经存储的文件大小
         QByteArray existingData = FileManager::instance()->readFile(m_username, m_uploadRemotePath);
         if (existingData.size() == m_uploadOffset) {
+            // 如果已存储的数据 == 偏移值，代表客户端上传偏移值刚好接上，将已存储数据插入到本次上传的数据之前，即拼接成完整的文件内容。
             fileData.prepend(existingData);
             qDebug() << "Combined file size:" << fileData.size();
         } else {
+            // 服务器上已存储的文件与预期的续传起点不匹配，只保存续传内容，输出日志
             qDebug() << "Existing file size mismatch, using new data only";
         }
     }
@@ -368,7 +373,7 @@ void ClientHandler::continueUpload() {
             // 非根目录：确保父目录在 directories 表中存在
             dirId = DatabaseManager::instance()->ensureDirectoryId(m_username, parentDir);
         }
-        // 防护：directory_id 无效时跳过 DB 写入，不阻塞上传成功响应
+        // directory_id 无效时跳过 DB 写入，不阻塞上传成功响应
         if (dirId > 0) {
             QString ext = m_uploadFileName.contains('.') ? m_uploadFileName.section('.', -1) : "";
             DatabaseManager::instance()->addFile(m_username, m_uploadFileName, m_uploadRemotePath, fileData.size(), ext, dirId);

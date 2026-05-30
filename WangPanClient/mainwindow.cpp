@@ -137,7 +137,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
                     m_previewWindow->setFile(tempPath, currentPreviewFile);
                     m_previewWindow->raise();
                     m_previewWindow->activateWindow();
-                } else {
+                } else {        // 反之，创建新预览窗口
                     PreviewWindow* previewWindow = new PreviewWindow(this);
                     previewWindow->setAttribute(Qt::WA_DeleteOnClose);
                     previewWindow->setFile(tempPath, currentPreviewFile);

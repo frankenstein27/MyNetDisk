@@ -101,11 +101,11 @@ void PreviewWindow::previewImageFile() {
     auto* label = new QLabel;
     label->setAlignment(Qt::AlignCenter);
     label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    // 将图片label放入scrollArea中，scrollArea放入imageTab的布局中
     scrollArea->setWidget(label);
-
     ui->imageTab->layout()->addWidget(scrollArea);
 
-    // 安装事件过滤器以截获 scrollArea（含 viewport）上的滚轮事件
+    // 安装事件过滤器以截获 scrollArea（含 viewport（用户可视区域））上的滚轮事件
     scrollArea->viewport()->installEventFilter(this);
     scrollArea->installEventFilter(this);
 
@@ -131,16 +131,17 @@ void PreviewWindow::updateImageDisplay() {
 }
 
 bool PreviewWindow::eventFilter(QObject* obj, QEvent* event) {
-    // 截获 QScrollArea（及其内部 viewport）上的滚轮事件，用于图片缩放
+    // 截获 QScrollArea（及其内部 viewport）上的滚轮（Wheel）事件，用于图片缩放
     if (event->type() == QEvent::Wheel && ui->previewTabWidget->currentWidget() == ui->imageTab && m_imageViewLabel) {
         QWheelEvent* wheelEvent = static_cast<QWheelEvent*>(event);
         double factor = (wheelEvent->angleDelta().y() > 0) ? 1.15 : (1.0 / 1.15);
         double newZoom = m_imageZoom * factor;
+        // 限制最大和最小缩放倍率
         if (newZoom >= 0.05 && newZoom <= 10.0) {
             m_imageZoom = newZoom;
             updateImageDisplay();
         }
-        return true;  // 消费事件，阻止 QScrollArea 将其用于滚动
+        return true;  // 消费事件，阻止事件冒泡，QScrollArea 将其用于滚动
     }
     return QMainWindow::eventFilter(obj, event);
 }

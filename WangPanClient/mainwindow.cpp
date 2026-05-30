@@ -5,6 +5,7 @@
 #include <QDialogButtonBox>
 #include <QFileIconProvider>
 #include <QFormLayout>
+#include <QHeaderView>
 #include <QImage>
 #include <QInputDialog>
 #include <QLabel>
@@ -15,6 +16,7 @@
 #include <QSet>
 #include <QVBoxLayout>
 #include <QtGlobal>  // 确保 QT_VERSION 宏可用
+#include <algorithm>
 
 #include "filemanager.h"
 #include "networkmanager.h"
@@ -72,15 +74,50 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         topLayout->insertWidget(2, m_storageLabel);
     }
 
+    // 视图模式切换
+    m_viewModeCombo = ui->viewModeCombo;
+    m_detailTable = ui->detailTable;
+
+    // 设置详细信息表格表头
+    setupDetailTableHeader();
+
+    // 默认选中"详细信息"（索引1）
+    m_viewModeCombo->setCurrentIndex(1);
+    connect(m_viewModeCombo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this, &MainWindow::switchViewMode);
+    // 初始化时应用默认视图
+    switchViewMode(1);
+
     // 连接信号和槽
     connect(ui->fileListWidget, &QListWidget::itemDoubleClicked, this, &MainWindow::HandleFileListWidget_itemDoubleClicked);
+    connect(ui->detailTable, &QTableWidget::cellDoubleClicked, this, [=](int row, int /*col*/) {
+        // 详细信息模式下双击行，模拟大图标模式的双击行为
+        QVariantMap data = m_detailTable->item(row, 0)->data(Qt::UserRole).toMap();
+        if (data.isEmpty()) return;
+        // 直接调用 HandleFileListWidget_itemDoubleClicked 的逻辑
+        QString fileName = data["name"].toString();
+        QString fileType = data["type"].toString();
+        QString filePath = buildPath(fileName);
+        if (fileType == "dir") {
+            pendingDirectory = filePath;
+            NetworkManager::instance()->listFiles(filePath);
+            ui->statusLabel->setText("正在进入目录: " + fileName);
+        } else {
+            currentPreviewFile = fileName;
+            QString tempPath = QDir::tempPath() + "/" + fileName;
+            if (QFile::exists(tempPath)) {
+                QFile::remove(tempPath);
+            }
+            ui->statusLabel->setText("正在下载文件: " + fileName);
+            FileManager::instance()->downloadFile(filePath, tempPath);
+        }
+    });
     connect(ui->backButton, &QPushButton::clicked, this, &MainWindow::HandleBackButton_clicked);
 
     // 连接文件管理器的信号
     connect(FileManager::instance(), &FileManager::fileListUpdated, this, [=]() {
-        // 更新文件列表UI
-        ui->fileListWidget->clear();
-        QList<FileInfo> fileList = FileManager::instance()->getFileList();
+        // 更新两种视图
+        populateIconView();
+        populateDetailView();
 
         // 检查是否有待处理的目录
         if (!pendingDirectory.isEmpty()) {
@@ -88,34 +125,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
             currentDirectory = pendingDirectory;
             pendingDirectory.clear();
 
+            QList<FileInfo> fileList = FileManager::instance()->getFileList();
             if (fileList.isEmpty()) {
                 ui->statusLabel->setText("该目录为空");
             } else {
                 // 成功进入且不为空，清除“正在进入”的提示
                 ui->statusLabel->setText("已进入目录" + currentDirectory.split("/").back());
             }
-        }
-
-        QFileIconProvider iconProvider;
-        for (int i = 0; i < fileList.size(); ++i) {
-            FileInfo fileInfo = fileList[i];
-            QListWidgetItem* item = new QListWidgetItem(fileInfo.name(), ui->fileListWidget);
-
-            // 设置图标
-            if (fileInfo.type() == "dir") {
-                item->setIcon(iconProvider.icon(QFileIconProvider::Folder));
-            } else {
-                item->setIcon(iconProvider.icon(QFileIconProvider::File));
-            }
-
-            // 存储文件信息
-            QVariantMap data;
-            data["name"] = fileInfo.name();
-            data["size"] = fileInfo.size();
-            data["type"] = fileInfo.type();
-            data["path"] = fileInfo.path();
-            data["modifyTime"] = fileInfo.modifyTime();
-            item->setData(Qt::UserRole, data);
         }
 
         // 更新路径标签
@@ -364,10 +380,8 @@ void MainWindow::on_actionUploadFile_triggered() {
 }
 
 void MainWindow::on_actionDownloadFile_triggered() {
-    // 获取当前选中的文件项
-    QListWidgetItem* item = ui->fileListWidget->currentItem();
-    if (item) {  // 如果选中了
-        QVariantMap data = item->data(Qt::UserRole).toMap();
+    QVariantMap data = getSelectedFileData();
+    if (!data.isEmpty()) {
         QString fileName = data["name"].toString();
         // 打开文件路径选择对话框，用户选择文件保存位置
         QString savePath = QFileDialog::getSaveFileName(this, "保存文件", QDir::homePath() + "/" + fileName);
@@ -381,9 +395,8 @@ void MainWindow::on_actionDownloadFile_triggered() {
 }
 
 void MainWindow::on_actionDelete_triggered() {
-    QListWidgetItem* item = ui->fileListWidget->currentItem();
-    if (item) {
-        QVariantMap data = item->data(Qt::UserRole).toMap();
+    QVariantMap data = getSelectedFileData();
+    if (!data.isEmpty()) {
         QString fileName = data["name"].toString();
         QMessageBox::StandardButton reply = QMessageBox::question(this, "确认删除", "确定要删除文件 " + fileName + " 吗?", QMessageBox::Yes | QMessageBox::No);
         if (reply == QMessageBox::Yes) {
@@ -395,9 +408,8 @@ void MainWindow::on_actionDelete_triggered() {
 }
 
 void MainWindow::on_actionRename_triggered() {
-    QListWidgetItem* item = ui->fileListWidget->currentItem();
-    if (item) {
-        QVariantMap data = item->data(Qt::UserRole).toMap();
+    QVariantMap data = getSelectedFileData();
+    if (!data.isEmpty()) {
         QString oldFileName = data["name"].toString();
         bool ok;
         QString newFileName = QInputDialog::getText(this, "重命名文件", "请输入新的文件名:", QLineEdit::Normal, oldFileName, &ok);
@@ -452,10 +464,8 @@ void MainWindow::on_uploadButton_clicked() {
 }
 
 void MainWindow::on_downloadButton_clicked() {
-    // 实现文件下载功能
-    QListWidgetItem* item = ui->fileListWidget->currentItem();
-    if (item) {
-        QVariantMap data = item->data(Qt::UserRole).toMap();
+    QVariantMap data = getSelectedFileData();
+    if (!data.isEmpty()) {
         QString fileName = data["name"].toString();
         QString savePath = QFileDialog::getSaveFileName(this, "保存文件", QDir::homePath() + "/" + fileName);
         if (!savePath.isEmpty()) {
@@ -510,6 +520,47 @@ void MainWindow::HandleBackButton_clicked() {
     }
 }
 
+// ===== 获取当前视图中的选中项数据 =====
+
+QVariantMap MainWindow::getSelectedFileData() const {
+    if (ui->viewStack->currentIndex() == 0) {
+        // 大图标模式
+        QListWidgetItem* item = ui->fileListWidget->currentItem();
+        if (item) return item->data(Qt::UserRole).toMap();
+    } else {
+        // 详细信息模式
+        int row = m_detailTable->currentRow();
+        if (row >= 0 && m_detailTable->item(row, 0)) {
+            return m_detailTable->item(row, 0)->data(Qt::UserRole).toMap();
+        }
+    }
+    return QVariantMap();
+}
+
+QList<QVariantMap> MainWindow::getSelectedFilesData() const {
+    QList<QVariantMap> result;
+    if (ui->viewStack->currentIndex() == 0) {
+        QList<QListWidgetItem*> selected = ui->fileListWidget->selectedItems();
+        for (auto* item : selected) {
+            result.append(item->data(Qt::UserRole).toMap());
+        }
+    } else {
+        QList<QTableWidgetSelectionRange> ranges = m_detailTable->selectedRanges();
+        QSet<int> rows;
+        for (const auto& range : ranges) {
+            for (int r = range.topRow(); r <= range.bottomRow(); ++r) {
+                rows.insert(r);
+            }
+        }
+        for (int row : rows) {
+            if (m_detailTable->item(row, 0)) {
+                result.append(m_detailTable->item(row, 0)->data(Qt::UserRole).toMap());
+            }
+        }
+    }
+    return result;
+}
+
 void MainWindow::onDeleteResult(bool success, const QString& message) {
     if (success) {
         ui->statusLabel->setText("文件删除成功");
@@ -523,15 +574,13 @@ void MainWindow::onDeleteResult(bool success, const QString& message) {
 // ===== 剪贴板功能 =====
 
 void MainWindow::on_actionCopy_triggered() {
-    // 获取选中的文件/目录项，保存到剪贴板路径列表，并记录是复制还是剪切
-    QList<QListWidgetItem*> selected = ui->fileListWidget->selectedItems();
+    QList<QVariantMap> selected = getSelectedFilesData();
     if (selected.isEmpty()) {
         ui->statusLabel->setText("请先选择要复制的文件/文件夹");
         return;
     }
     m_clipboardPaths.clear();
-    for (auto* item : selected) {
-        QVariantMap data = item->data(Qt::UserRole).toMap();
+    for (const auto& data : selected) {
         m_clipboardPaths.append(data["name"].toString());
     }
     m_clipboardAction = "copy";
@@ -540,14 +589,13 @@ void MainWindow::on_actionCopy_triggered() {
 }
 
 void MainWindow::on_actionCut_triggered() {
-    QList<QListWidgetItem*> selected = ui->fileListWidget->selectedItems();
+    QList<QVariantMap> selected = getSelectedFilesData();
     if (selected.isEmpty()) {
         ui->statusLabel->setText("请先选择要剪切的文件/文件夹");
         return;
     }
     m_clipboardPaths.clear();
-    for (auto* item : selected) {
-        QVariantMap data = item->data(Qt::UserRole).toMap();
+    for (const auto& data : selected) {
         m_clipboardPaths.append(data["name"].toString());
     }
     m_clipboardAction = "cut";
@@ -758,4 +806,132 @@ void MainWindow::on_actionClearPreview_triggered() {
         }
     }
     ui->statusLabel->setText(QString("已清理 %1 个预览文件").arg(count));
+}
+
+// ===== 视图模式切换 =====
+
+void MainWindow::setupDetailTableHeader() {
+    QStringList headers;
+    headers << "文件名" << "修改日期" << "类型" << "大小";
+    ui->detailTable->setColumnCount(4);
+    ui->detailTable->setHorizontalHeaderLabels(headers);
+    // 让用户可拖拽调整列宽
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+    ui->detailTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+#else
+    ui->detailTable->horizontalHeader()->setResizeMode(QHeaderView::Interactive);
+#endif
+    // 默认列宽
+    ui->detailTable->horizontalHeader()->resizeSection(0, 280);
+    ui->detailTable->horizontalHeader()->resizeSection(1, 160);
+    ui->detailTable->horizontalHeader()->resizeSection(2, 100);
+    ui->detailTable->horizontalHeader()->setStretchLastSection(true);
+    // 隐藏垂直表头（行号）
+    ui->detailTable->verticalHeader()->setVisible(false);
+    // 设置行选择整行
+    ui->detailTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    // 禁止编辑
+    ui->detailTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+}
+
+void MainWindow::switchViewMode(int index) {
+    // index 0 = 大图标, index 1 = 详细信息
+    ui->viewStack->setCurrentIndex(index);
+}
+
+void MainWindow::populateIconView() {
+    ui->fileListWidget->clear();
+    QList<FileInfo> fileList = FileManager::instance()->getFileList();
+
+    // 排序：文件夹优先，各自按名称 A→Z 排序
+    auto sortedList = fileList;
+    std::sort(sortedList.begin(), sortedList.end(), [](const FileInfo& a, const FileInfo& b) {
+        bool aIsDir = (a.type() == "dir");
+        bool bIsDir = (b.type() == "dir");
+        if (aIsDir != bIsDir) return aIsDir;  // 文件夹优先
+        return a.name().compare(b.name(), Qt::CaseInsensitive) < 0;
+    });
+
+    QFileIconProvider iconProvider;
+    for (const FileInfo& fileInfo : sortedList) {
+        QListWidgetItem* item = new QListWidgetItem(fileInfo.name(), ui->fileListWidget);
+
+        if (fileInfo.type() == "dir") {
+            item->setIcon(iconProvider.icon(QFileIconProvider::Folder));
+        } else {
+            item->setIcon(iconProvider.icon(QFileIconProvider::File));
+        }
+
+        QVariantMap data;
+        data["name"] = fileInfo.name();
+        data["size"] = fileInfo.size();
+        data["type"] = fileInfo.type();
+        data["path"] = fileInfo.path();
+        data["modifyTime"] = fileInfo.modifyTime();
+        item->setData(Qt::UserRole, data);
+    }
+}
+
+void MainWindow::populateDetailView() {
+    QList<FileInfo> fileList = FileManager::instance()->getFileList();
+
+    // 排序：文件夹优先，各自按名称 A→Z 排序
+    auto sortedList = fileList;
+    std::sort(sortedList.begin(), sortedList.end(), [](const FileInfo& a, const FileInfo& b) {
+        bool aIsDir = (a.type() == "dir");
+        bool bIsDir = (b.type() == "dir");
+        if (aIsDir != bIsDir) return aIsDir;  // 文件夹优先
+        return a.name().compare(b.name(), Qt::CaseInsensitive) < 0;
+    });
+
+    m_detailTable->setRowCount(0);
+    m_detailTable->setRowCount(sortedList.size());
+
+    QFileIconProvider iconProvider;
+    for (int i = 0; i < sortedList.size(); ++i) {
+        const FileInfo& fileInfo = sortedList[i];
+        bool isDir = (fileInfo.type() == "dir");
+
+        // 文件名（带图标）
+        QTableWidgetItem* nameItem = new QTableWidgetItem(fileInfo.name());
+        if (isDir) {
+            nameItem->setIcon(iconProvider.icon(QFileIconProvider::Folder));
+        } else {
+            nameItem->setIcon(iconProvider.icon(QFileIconProvider::File));
+        }
+        // 存储完整文件信息到第一列
+        QVariantMap data;
+        data["name"] = fileInfo.name();
+        data["size"] = fileInfo.size();
+        data["type"] = fileInfo.type();
+        data["path"] = fileInfo.path();
+        data["modifyTime"] = fileInfo.modifyTime();
+        nameItem->setData(Qt::UserRole, data);
+        // 文件名（索引0）
+        m_detailTable->setItem(i, 0, nameItem);
+
+        // 日期
+        m_detailTable->setItem(i, 1, new QTableWidgetItem(fileInfo.modifyTime()));
+
+        // 类型
+        QString typeDisplay = isDir ? "文件夹" : fileInfo.type();
+        m_detailTable->setItem(i, 2, new QTableWidgetItem(typeDisplay));
+
+        // 大小（文件夹留空）
+        if (isDir) {
+            m_detailTable->setItem(i, 3, new QTableWidgetItem(""));
+        } else {
+            qint64 size = fileInfo.size();
+            QString sizeStr;
+            if (size >= 1024 * 1024 * 1024)
+                sizeStr = QString::number(size / (1024.0 * 1024 * 1024), 'f', 2) + " GB";
+            else if (size >= 1024 * 1024)
+                sizeStr = QString::number(size / (1024.0 * 1024), 'f', 1) + " MB";
+            else if (size >= 1024)
+                sizeStr = QString::number(size / 1024.0, 'f', 1) + " KB";
+            else
+                sizeStr = QString::number(size) + " B";
+            m_detailTable->setItem(i, 3, new QTableWidgetItem(sizeStr));
+        }
+    }
 }

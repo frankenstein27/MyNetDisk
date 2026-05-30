@@ -1,6 +1,7 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include <QComboBox>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileDialog>
@@ -8,7 +9,9 @@
 #include <QListWidgetItem>
 #include <QMainWindow>
 #include <QPointer>
+#include <QStackedWidget>
 #include <QString>
+#include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QTreeWidgetItem>
 
@@ -84,6 +87,16 @@ class MainWindow : public QMainWindow {
     // 传输速度计时
     QElapsedTimer m_uploadTimer;
     QElapsedTimer m_downloadTimer;
+
+    // 视图模式切换
+    QComboBox* m_viewModeCombo;
+    QTableWidget* m_detailTable;
+    void switchViewMode(int index);
+    void populateIconView();
+    void populateDetailView();
+    void setupDetailTableHeader();
+    QVariantMap getSelectedFileData() const;
+    QList<QVariantMap> getSelectedFilesData() const;
 
     QString buildPath(const QString& name);
 

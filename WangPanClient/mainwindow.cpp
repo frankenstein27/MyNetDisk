@@ -137,7 +137,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
                     m_previewWindow->setFile(tempPath, currentPreviewFile);
                     m_previewWindow->raise();
                     m_previewWindow->activateWindow();
-                } else {        // 反之，创建新预览窗口
+                } else {  // 反之，创建新预览窗口
                     PreviewWindow* previewWindow = new PreviewWindow(this);
                     previewWindow->setAttribute(Qt::WA_DeleteOnClose);
                     previewWindow->setFile(tempPath, currentPreviewFile);
@@ -743,7 +743,7 @@ void MainWindow::on_actionClearPreview_triggered() {
     QStringList filters;
     filters << "*.txt" << "*.cpp" << "*.h" << "*.c" << "*.hpp" << "*.java"
             << "*.py" << "*.js" << "*.html" << "*.css" << "*.sh"
-            << "*.jpg" << "*.jpeg" << "*.png" << "*.bmp" << "*.gif" << "*.pdf";
+            << "*.jpg" << "*.jpeg" << "*.png" << "*.bmp" << "*.gif" << "*.pdf" << "*.mp4" << "*.avi" << "*.mkv";
     // 只删除预览文件，避免误删其他临时文件
     QFileInfoList files = tempDir.entryInfoList(filters, QDir::Files);
     if (files.isEmpty()) {

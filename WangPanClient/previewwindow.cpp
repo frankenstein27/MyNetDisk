@@ -19,7 +19,7 @@
 #include "ui_previewwindow.h"
 
 // 后缀为以下类型可以以文本方式预览
-static const QSet<QString> s_PreviewAsTxt = {"txt", "cpp", "h", "c", "hpp", "java", "py", "js", "html", "css"};
+static const QSet<QString> s_PreviewAsTxt = {"txt", "cpp", "h", "c", "hpp", "java", "py", "js", "html", "css", "md"};
 // 图像
 static const QSet<QString> s_PreviewAsImage = {"jpg", "jpeg", "png", "bmp", "gif"};
 
